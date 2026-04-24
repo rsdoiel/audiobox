@@ -1,0 +1,35 @@
+{
+  "@context": "https://w3id.org/codemeta/3.0",
+  "type": "SoftwareSourceCode",
+  "codeRepository": "https://github.com/rsdoiel/audioinfo",
+  "author": [
+    {
+      "id": "https://orcid.org/0000-0003-0900-6903",
+      "type": "Person",
+      "givenName": "R. S.",
+      "familyName": "Doiel",
+      "email": "rsdoiel@gmail.com"
+    }
+  ],
+  "dateCreated": "2026-04-24",
+  "dateModified": "2026-04-24",
+  "description": "audioinfo is a go module that for managing audio metadata in an SQLite3 database. It uses \"https://github.com/dhowden/tag\" module to extract metadata that may be found in the audio file itself.",
+  "name": "audioinfo",
+  "license": "https://www.gnu.org/licenses/agpl-3.0.txt",
+  "programmingLanguage": [
+    "Go >= 1.26.2"
+  ],
+  "softwareRequirements": [
+    "Go >= 1.26.2"
+  ],
+  "softwareSuggestions": [
+    "CMTools >= 0.0.40",
+    "Pandoc >= 3.1",
+    "GNU Make >= 3"
+  ],
+  "version": "0.0.0",
+  "developmentStatus": "concept",
+  "issueTracker": "https://github.com/rsdoiel/audioinfo/issues",
+  "copyrightYear": 2026,
+  "copyrightHolder": "R. S. Doiel"
+}
