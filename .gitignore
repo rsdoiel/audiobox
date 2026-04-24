@@ -1,0 +1,8 @@
+*~
+*#
+*.tmp
+*.swp
+*.bak
+bin
+dist
+testout
