@@ -56,7 +56,7 @@ ACTIONS
     Initialise a new collection.  Missing arguments are prompted interactively.
 
   scan COLLECTION.yaml
-    Walk the collection's musicDir and ingest every audio file found.
+    Walk the collection's audioDir and ingest every audio file found.
 
   list COLLECTION.yaml [albums|artists|titles]
     List distinct albums, artists, or titles (default: albums).
@@ -124,7 +124,7 @@ EXAMPLES
 `
 
 const helpScan = `
-{app_name} scan — scan musicDir for audio files
+{app_name} scan — scan audioDir for audio files
 
 SYNOPSIS
 
@@ -132,7 +132,7 @@ SYNOPSIS
 
 DESCRIPTION
 
-  Walks the musicDir recorded in COLLECTION.yaml and ingests every recognised
+  Walks the audioDir recorded in COLLECTION.yaml and ingests every recognised
   audio file (.mp3 .flac .ogg .m4a .wma .wav).  For each file {app_name}:
 
     1. Computes a SHA-256 checksum (fixity).
@@ -255,7 +255,7 @@ DESCRIPTION
     corsOrigin (string)  Access-Control-Allow-Origin value
                          (default: "*"; set to "off" to disable)
 
-  POST /api/scan starts an asynchronous re-scan of musicDir.
+  POST /api/scan starts an asynchronous re-scan of audioDir.
   Use GET /api/scan/status to poll for completion.
   Press Ctrl-C to stop the server.
 
@@ -266,7 +266,7 @@ ENDPOINTS
   GET  /api/list/titles     list distinct recording titles
   GET  /api/search?q=QUERY  search the collection (regex and field-scope supported)
   GET  /api/show/{id}       full metadata for one record
-  POST /api/scan            start async re-scan of musicDir
+  POST /api/scan            start async re-scan of audioDir
   GET  /api/scan/status     poll async scan progress
   GET  /api/audio/{id}      stream audio file (supports Range requests)
   GET  /api/help            API reference as Markdown
@@ -330,7 +330,7 @@ func main() {
 		handleInit(args)
 	case "help":
 		handleHelp(appName, args)
-	case "scan", "list", "search", "show", "delete", "server":
+	case "scan", "list", "search", "show", "delete", "server", "player":
 		if len(args) < 1 {
 			fmt.Fprintf(os.Stderr, "error: %s requires a COLLECTION.yaml argument\n", action)
 			os.Exit(1)
@@ -354,6 +354,8 @@ func main() {
 			handleDelete(col, rest)
 		case "server":
 			handleServer(col)
+		case "player":
+			handlePlayer(col)
 		}
 	default:
 		fmt.Fprintf(os.Stderr, "unknown action %q\n", action)
@@ -381,19 +383,19 @@ func handleHelp(appName string, args []string) {
 }
 
 func handleInit(args []string) {
-	name, musicDir, description := "", "", ""
+	name, audioDir, description := "", "", ""
 	if len(args) >= 1 {
 		name = args[0]
 	}
 	if len(args) >= 2 {
-		musicDir = args[1]
+		audioDir = args[1]
 	}
 	if len(args) >= 3 {
 		description = strings.Join(args[2:], " ")
 	}
 
 	// Prompt for any missing values interactively.
-	if name == "" || musicDir == "" {
+	if name == "" || audioDir == "" {
 		le := termlib.NewLineEditor(os.Stdin, os.Stdout)
 		var err error
 		if name == "" {
@@ -403,12 +405,12 @@ func handleInit(args []string) {
 			}
 			name = strings.TrimSpace(name)
 		}
-		if musicDir == "" {
-			musicDir, err = le.Prompt("Root directory: ")
+		if audioDir == "" {
+			audioDir, err = le.Prompt("Audio directory: ")
 			if err != nil {
 				log.Fatalf("init aborted: %v", err)
 			}
-			musicDir = strings.TrimSpace(musicDir)
+			audioDir = strings.TrimSpace(audioDir)
 		}
 		if description == "" {
 			description, err = le.Prompt("Description (optional): ")
@@ -419,20 +421,20 @@ func handleInit(args []string) {
 		}
 	}
 
-	if name == "" || musicDir == "" {
+	if name == "" || audioDir == "" {
 		fmt.Fprintln(os.Stderr, "error: name and root directory are required")
 		os.Exit(1)
 	}
 
-	col, err := audioinfo.NewCollection(name, musicDir, description)
+	col, err := audioinfo.NewCollection(name, audioDir, description)
 	if err != nil {
 		log.Fatalf("error initialising collection: %v", err)
 	}
 	col.Close()
 
 	cfg := col.Config()
-	fmt.Printf("Initialised collection %q\n  config:   %s.yaml\n  database: %s\n  musicDir:  %s\n",
-		cfg.Name, name, cfg.Database, cfg.MusicDir)
+	fmt.Printf("Initialised collection %q\n  config:   %s.yaml\n  database: %s\n  audioDir:  %s\n",
+		cfg.Name, name, cfg.Database, cfg.AudioDir)
 }
 
 func handleScan(col *audioinfo.Collection) {
@@ -534,6 +536,12 @@ func handleDelete(col *audioinfo.Collection, args []string) {
 		log.Fatalf("error deleting record: %v", err)
 	}
 	fmt.Printf("Deleted %s\n", args[0])
+}
+
+func handlePlayer(col *audioinfo.Collection) {
+	if err := audioinfo.RunPlayer(col); err != nil {
+		log.Fatalf("player error: %v", err)
+	}
 }
 
 // --------------------------------------------------------------------------

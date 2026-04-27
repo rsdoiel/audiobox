@@ -243,10 +243,10 @@ func (c *Collection) handleAudio(logger *log.Logger) http.HandlerFunc {
 			return
 		}
 
-		// Guard: file must be within MusicDir.
-		musicDir := filepath.Clean(c.cfg.MusicDir) + string(filepath.Separator)
-		if !strings.HasPrefix(absPath+string(filepath.Separator), musicDir) {
-			logger.Printf("audio: path %q outside MusicDir", absPath)
+		// Guard: file must be within AudioDir.
+		audioDir := filepath.Clean(c.cfg.AudioDir) + string(filepath.Separator)
+		if !strings.HasPrefix(absPath+string(filepath.Separator), audioDir) {
+			logger.Printf("audio: path %q outside AudioDir", absPath)
 			writeJSONError(w, http.StatusForbidden, "forbidden")
 			return
 		}
@@ -312,7 +312,7 @@ Status 404 when not found.
 ## Scan
 
 ` + "```" + `
-POST /api/scan           — start async re-scan of musicDir
+POST /api/scan           — start async re-scan of audioDir
 GET  /api/scan/status    — poll scan progress
 ` + "```" + `
 
@@ -338,7 +338,7 @@ GET /api/audio/{id}
 
 Streams the audio file for the record identified by UUID.
 Supports HTTP Range requests so browser ` + "`<audio>`" + ` elements can seek.
-Returns 403 if the file is outside the collection's musicDir.
+Returns 403 if the file is outside the collection's audioDir.
 
 ## Help
 

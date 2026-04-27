@@ -40,7 +40,7 @@ func resolveYAMLPath(path string) string {
  *   Name        (string) — short identifier for the collection (also the basename of the DB file)
  *   Description (string) — human-readable description of the collection
  *   Database    (string) — path to the SQLite3 database, relative to the YAML file's directory
- *   MusicDir    (string) — root directory of the audio file tree to scan
+ *   AudioDir    (string) — audio directory of the audio file tree to scan
  *   Htdocs      (string) — document root for the web server's static files (optional)
  *   Port        (int)    — port the web server listens on; 0 means default (8010)
  *   CORSOrigin  (string) — Access-Control-Allow-Origin value; "" means "*", "off" disables CORS
@@ -50,7 +50,7 @@ func resolveYAMLPath(path string) string {
  *     Name:        "mymusic",
  *     Description: "My personal music archive",
  *     Database:    "mymusic.db",
- *     MusicDir:    "/home/alice/Music",
+ *     AudioDir:    "/home/alice/Music",
  *     Htdocs:      "/home/alice/music-ui",
  *     Port:        8010,
  *   }
@@ -59,7 +59,7 @@ type CollectionConfig struct {
 	Name        string `yaml:"name"`
 	Description string `yaml:"description"`
 	Database    string `yaml:"database"`
-	MusicDir    string `yaml:"musicDir"`
+	AudioDir    string `yaml:"audioDir"`
 	Htdocs      string `yaml:"htdocs,omitempty"`
 	Port        int    `yaml:"port,omitempty"`
 	CORSOrigin  string `yaml:"corsOrigin,omitempty"`
@@ -121,7 +121,7 @@ func SaveConfig(yamlPath string, cfg CollectionConfig) error {
  *
  * Parameters:
  *   name        (string) — short collection identifier; used as the basename for both files
- *   musicDir     (string) — root directory of the audio file tree
+ *   audioDir     (string) — audio directory of the audio file tree
  *   description (string) — human-readable description of the collection
  *
  * Returns:
@@ -133,14 +133,14 @@ func SaveConfig(yamlPath string, cfg CollectionConfig) error {
  *   if err != nil { log.Fatal(err) }
  *   defer col.Close()
  */
-func NewCollection(name, musicDir, description string) (*Collection, error) {
-	expanded, err := expandHome(musicDir)
+func NewCollection(name, audioDir, description string) (*Collection, error) {
+	expanded, err := expandHome(audioDir)
 	if err != nil {
 		return nil, err
 	}
 	absRoot, err := filepath.Abs(expanded)
 	if err != nil {
-		return nil, fmt.Errorf("resolving musicDir %q: %w", musicDir, err)
+		return nil, fmt.Errorf("resolving audioDir %q: %w", audioDir, err)
 	}
 
 	dbFile := name + ".db"
@@ -150,7 +150,7 @@ func NewCollection(name, musicDir, description string) (*Collection, error) {
 		Name:        name,
 		Description: description,
 		Database:    dbFile,
-		MusicDir:     absRoot,
+		AudioDir:     absRoot,
 	}
 
 	db, err := openDB(dbFile)
@@ -196,13 +196,13 @@ func LoadCollection(yamlPath string) (*Collection, error) {
 		return nil, err
 	}
 
-	// Resolve musicDir: expand tilde, then treat relative paths as relative to the YAML file.
-	cfg.MusicDir, err = expandHome(cfg.MusicDir)
+	// Resolve audioDir: expand tilde, then treat relative paths as relative to the YAML file.
+	cfg.AudioDir, err = expandHome(cfg.AudioDir)
 	if err != nil {
 		return nil, err
 	}
-	if !filepath.IsAbs(cfg.MusicDir) {
-		cfg.MusicDir = filepath.Join(filepath.Dir(absYAML), cfg.MusicDir)
+	if !filepath.IsAbs(cfg.AudioDir) {
+		cfg.AudioDir = filepath.Join(filepath.Dir(absYAML), cfg.AudioDir)
 	}
 
 	// Resolve htdocs the same way.

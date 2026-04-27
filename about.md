@@ -14,6 +14,7 @@ license_url: https://www.gnu.org/licenses/agpl-3.0.txt
 
 programming_language:
   - Go &gt;&#x3D; 1.26.2
+  - TypeScript
 
 
 
@@ -44,6 +45,7 @@ audioinfo is a go module that for managing audio metadata in an SQLite3 database
 ### Programming languages
 
 - Go >= 1.26.2
+- TypeScript
 
 
 
@@ -58,5 +60,7 @@ audioinfo is a go module that for managing audio metadata in an SQLite3 database
 - CMTools &gt;&#x3D; 0.0.40
 - Pandoc &gt;&#x3D; 3.1
 - GNU Make &gt;&#x3D; 3
+- Deno &gt;&#x3D; 2.4.0
+- FFmpeg &gt;&#x3D; 6.0
 
 

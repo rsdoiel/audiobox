@@ -25,7 +25,7 @@ ACTIONS
     Initialise a new collection.  Missing arguments are prompted interactively.
 
   scan COLLECTION.yaml
-    Walk the collection's musicDir and ingest every audio file found.
+    Walk the collection's audioDir and ingest every audio file found.
 
   list COLLECTION.yaml [albums|artists|titles]
     List distinct albums, artists, or titles (default: albums).

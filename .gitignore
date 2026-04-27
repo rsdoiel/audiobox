@@ -7,4 +7,6 @@ bin
 man
 dist
 testout
+music.yaml
+music.db
 htdocs/module

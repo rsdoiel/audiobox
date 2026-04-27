@@ -117,7 +117,7 @@ func (c *Collection) Close() error {
  *   CollectionConfig — a copy of the collection's configuration
  *
  * Example:
- *   fmt.Println(col.Config().MusicDir)
+ *   fmt.Println(col.Config().AudioDir)
  */
 func (c *Collection) Config() CollectionConfig {
 	return c.cfg
@@ -244,7 +244,7 @@ func (c *Collection) ProcessAudioFile(filePath string, logger *log.Logger) error
 	return nil
 }
 
-/** ScanDirectories walks the collection's musicDir, calling ProcessAudioFile for every
+/** ScanDirectories walks the collection's audioDir, calling ProcessAudioFile for every
  * recognised audio file found.  Filesystem and database errors stop the walk immediately.
  * Tag-decode errors are logged as warnings and the walk continues.
  *
@@ -259,7 +259,7 @@ func (c *Collection) ScanDirectories() error {
 	return c.ScanDirectoriesWithProcessor(c.ProcessAudioFile, logger)
 }
 
-/** ScanDirectoriesWithProcessor walks the collection's musicDir and calls processor for every
+/** ScanDirectoriesWithProcessor walks the collection's audioDir and calls processor for every
  * recognised audio file.  This variant is primarily useful for testing with a mock processor.
  *
  * The walk follows symbolic links and detects cycles via canonical path tracking.
@@ -271,7 +271,7 @@ func (c *Collection) ScanDirectories() error {
  *   logger    (*log.Logger) — receives warnings for inaccessible paths
  *
  * Returns:
- *   error — non-nil if musicDir is inaccessible or processor returns a database error
+ *   error — non-nil if audioDir is inaccessible or processor returns a database error
  *
  * Example:
  *   err := col.ScanDirectoriesWithProcessor(myProcessor, log.New(os.Stderr, "", 0))
@@ -283,11 +283,11 @@ func (c *Collection) ScanDirectoriesWithProcessor(
 	if !c.isOpen {
 		return fmt.Errorf("collection is not open")
 	}
-	if _, err := os.Stat(c.cfg.MusicDir); err != nil {
-		return fmt.Errorf("root directory %q: %w", c.cfg.MusicDir, err)
+	if _, err := os.Stat(c.cfg.AudioDir); err != nil {
+		return fmt.Errorf("audio directory %q: %w", c.cfg.AudioDir, err)
 	}
 	visited := make(map[string]struct{})
-	return c.walkDir(c.cfg.MusicDir, visited, processor, logger)
+	return c.walkDir(c.cfg.AudioDir, visited, processor, logger)
 }
 
 // walkDir recursively descends dir, following symlinks and skipping cycles.
