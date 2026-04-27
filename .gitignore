@@ -9,4 +9,6 @@ dist
 testout
 music.yaml
 music.db
+music.db-shm
+music.db-wal
 htdocs/module
