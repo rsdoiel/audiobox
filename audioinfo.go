@@ -12,6 +12,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -115,7 +116,7 @@ func (c *Collection) Close() error {
  *   CollectionConfig — a copy of the collection's configuration
  *
  * Example:
- *   fmt.Println(col.Config().RootDir)
+ *   fmt.Println(col.Config().MusicDir)
  */
 func (c *Collection) Config() CollectionConfig {
 	return c.cfg
@@ -242,7 +243,7 @@ func (c *Collection) ProcessAudioFile(filePath string, logger *log.Logger) error
 	return nil
 }
 
-/** ScanDirectories walks the collection's rootDir, calling ProcessAudioFile for every
+/** ScanDirectories walks the collection's musicDir, calling ProcessAudioFile for every
  * recognised audio file found.  Filesystem and database errors stop the walk immediately.
  * Tag-decode errors are logged as warnings and the walk continues.
  *
@@ -257,7 +258,7 @@ func (c *Collection) ScanDirectories() error {
 	return c.ScanDirectoriesWithProcessor(c.ProcessAudioFile, logger)
 }
 
-/** ScanDirectoriesWithProcessor walks the collection's rootDir and calls processor for every
+/** ScanDirectoriesWithProcessor walks the collection's musicDir and calls processor for every
  * recognised audio file.  This variant is primarily useful for testing with a mock processor.
  *
  * The walk follows symbolic links and detects cycles via canonical path tracking.
@@ -269,7 +270,7 @@ func (c *Collection) ScanDirectories() error {
  *   logger    (*log.Logger) — receives warnings for inaccessible paths
  *
  * Returns:
- *   error — non-nil if rootDir is inaccessible or processor returns a database error
+ *   error — non-nil if musicDir is inaccessible or processor returns a database error
  *
  * Example:
  *   err := col.ScanDirectoriesWithProcessor(myProcessor, log.New(os.Stderr, "", 0))
@@ -281,11 +282,11 @@ func (c *Collection) ScanDirectoriesWithProcessor(
 	if !c.isOpen {
 		return fmt.Errorf("collection is not open")
 	}
-	if _, err := os.Stat(c.cfg.RootDir); err != nil {
-		return fmt.Errorf("root directory %q: %w", c.cfg.RootDir, err)
+	if _, err := os.Stat(c.cfg.MusicDir); err != nil {
+		return fmt.Errorf("root directory %q: %w", c.cfg.MusicDir, err)
 	}
 	visited := make(map[string]struct{})
-	return c.walkDir(c.cfg.RootDir, visited, processor, logger)
+	return c.walkDir(c.cfg.MusicDir, visited, processor, logger)
 }
 
 // walkDir recursively descends dir, following symlinks and skipping cycles.
@@ -353,27 +354,320 @@ func extractArtistNames(agents []Agent) string {
 	return strings.Join(names, " ")
 }
 
-// buildFTS5Query converts a slice of user-supplied terms into an FTS5 MATCH expression
-// with auto-fuzziness matching OpenSearch AUTO behaviour:
-//   - ≤2 chars: exact match
-//   - 3–5 chars: edit distance 1  (~1)
-//   - 6+ chars: edit distance 2  (~2)
-//
-// Each term is double-quoted so FTS5 special characters in user input are inert.
-func buildFTS5Query(terms []string) string {
-	parts := make([]string, len(terms))
-	for i, term := range terms {
-		escaped := strings.ReplaceAll(term, `"`, `""`)
-		switch n := len([]rune(term)); {
-		case n <= 2:
-			parts[i] = `"` + escaped + `"`
-		case n <= 5:
-			parts[i] = `"` + escaped + `"~1`
-		default:
-			parts[i] = `"` + escaped + `"~2`
+// queryToken is a single parsed unit of a search query.
+// field is a canonical search_index column name ("name", "in_album", "genre",
+// "recording_of", "artist_names") or "" for unscoped (all fields).
+// pattern is the literal text or regex pattern; isRegex signals which.
+type queryToken struct {
+	field   string
+	pattern string
+	isRegex bool
+}
+
+// fieldAliases maps user-facing field names to search_index column names.
+var fieldAliases = map[string]string{
+	"title":        "name",
+	"name":         "name",
+	"album":        "in_album",
+	"artist":       "artist_names",
+	"genre":        "genre",
+	"recording":    "recording_of",
+	"recording_of": "recording_of",
+}
+
+// allSearchFields lists every indexed column in search_index (excludes audio_id UNINDEXED).
+var allSearchFields = []string{"name", "in_album", "genre", "recording_of", "artist_names"}
+
+/** parseQuery splits a query string into queryTokens.
+ *
+ * Supported syntax (tokens are whitespace-separated):
+ *   word           — unscoped plain term
+ *   /pattern/      — unscoped regex (RE2 syntax, case-insensitive)
+ *   field:word     — plain term scoped to a known field alias
+ *   field:/pattern/ — regex scoped to a known field alias
+ *
+ * Field aliases: title/name, album, artist, genre, recording/recording_of.
+ * A colon prefix is only treated as a field scope when the word before it is a
+ * known alias; otherwise the whole token is a plain unscoped term.
+ * A /pattern/ is only treated as regex when it both starts and ends with '/'.
+ *
+ * Parameters:
+ *   query (string) — raw query string from the user
+ *
+ * Returns:
+ *   []queryToken — parsed tokens; empty slice when query is blank
+ *
+ * Example:
+ *   tokens := parseQuery("artist:/Glenn Gould/ Baroque")
+ *   // [{field:"artist_names", pattern:"Glenn Gould", isRegex:true},
+ *   //  {field:"",             pattern:"Baroque",     isRegex:false}]
+ */
+func parseQuery(query string) []queryToken {
+	raw := strings.Fields(query)
+	tokens := make([]queryToken, 0, len(raw))
+	for _, part := range raw {
+		tok := queryToken{}
+
+		// Check for field: prefix.
+		if idx := strings.IndexByte(part, ':'); idx > 0 {
+			alias := strings.ToLower(part[:idx])
+			if col, ok := fieldAliases[alias]; ok {
+				tok.field = col
+				part = part[idx+1:]
+			}
+		}
+
+		// Check for /pattern/ regex delimiters.
+		if len(part) >= 2 && part[0] == '/' && part[len(part)-1] == '/' {
+			tok.isRegex = true
+			tok.pattern = part[1 : len(part)-1]
+		} else {
+			tok.pattern = part
+		}
+
+		if tok.pattern != "" {
+			tokens = append(tokens, tok)
+		}
+	}
+	return tokens
+}
+
+// hasRegexToken reports whether any token in the slice is a regex.
+func hasRegexToken(tokens []queryToken) bool {
+	for _, t := range tokens {
+		if t.isRegex {
+			return true
+		}
+	}
+	return false
+}
+
+// buildFTS5Query converts plain (non-regex) queryTokens into an FTS5 MATCH expression.
+// Field-scoped tokens produce FTS5 field:term syntax; unscoped tokens are bare phrases.
+// All terms are AND-ed (FTS5 default for space-separated expressions).
+func buildFTS5Query(tokens []queryToken) string {
+	parts := make([]string, 0, len(tokens))
+	for _, tok := range tokens {
+		escaped := strings.ReplaceAll(tok.pattern, `"`, `""`)
+		if tok.field != "" {
+			parts = append(parts, tok.field+`:"`+escaped+`"`)
+		} else {
+			parts = append(parts, `"`+escaped+`"`)
 		}
 	}
 	return strings.Join(parts, " ")
+}
+
+// levenshtein returns the edit distance between a and b (unicode-aware, case-insensitive).
+func levenshtein(a, b string) int {
+	ra, rb := []rune(strings.ToLower(a)), []rune(strings.ToLower(b))
+	la, lb := len(ra), len(rb)
+	if la == 0 {
+		return lb
+	}
+	if lb == 0 {
+		return la
+	}
+	prev := make([]int, lb+1)
+	curr := make([]int, lb+1)
+	for j := range prev {
+		prev[j] = j
+	}
+	for i := 1; i <= la; i++ {
+		curr[0] = i
+		for j := 1; j <= lb; j++ {
+			if ra[i-1] == rb[j-1] {
+				curr[j] = prev[j-1]
+			} else {
+				curr[j] = 1 + minInt3(prev[j], curr[j-1], prev[j-1])
+			}
+		}
+		prev, curr = curr, prev
+	}
+	return prev[lb]
+}
+
+func minInt3(a, b, c int) int {
+	if b < a {
+		a = b
+	}
+	if c < a {
+		return c
+	}
+	return a
+}
+
+// fuzzyThreshold returns the max allowed Levenshtein distance for a query term of length n,
+// matching OpenSearch AUTO behaviour.
+func fuzzyThreshold(n int) int {
+	switch {
+	case n <= 2:
+		return 0
+	case n <= 5:
+		return 1
+	default:
+		return 2
+	}
+}
+
+// collectFieldWords returns each searchable field's words (lowercased, punctuation-stripped)
+// keyed by search_index column name.
+func collectFieldWords(info AudioInfo) map[string][]string {
+	splitWords := func(s string) []string {
+		var out []string
+		for _, w := range strings.Fields(s) {
+			w = strings.ToLower(strings.Trim(w, `.,;:()[]"'`))
+			if w != "" {
+				out = append(out, w)
+			}
+		}
+		return out
+	}
+	return map[string][]string{
+		"name":         splitWords(info.Name),
+		"in_album":     splitWords(info.InAlbum),
+		"genre":        splitWords(info.Genre),
+		"recording_of": splitWords(info.RecordingOf),
+		"artist_names": splitWords(extractArtistNames(info.ByArtist)),
+	}
+}
+
+// collectFieldText returns the full (unspilt) text of each searchable field,
+// keyed by search_index column name.  Used by regexSearch.
+func collectFieldText(info AudioInfo) map[string]string {
+	return map[string]string{
+		"name":         info.Name,
+		"in_album":     info.InAlbum,
+		"genre":        info.Genre,
+		"recording_of": info.RecordingOf,
+		"artist_names": extractArtistNames(info.ByArtist),
+	}
+}
+
+// fuzzySearch scans all audio_files and returns those where every token fuzzy-matches
+// at least one word in the token's target field(s) (AND semantics).
+// Edit-distance thresholds match OpenSearch AUTO: 0 for ≤2 chars, 1 for 3–5, 2 for 6+.
+func (c *Collection) fuzzySearch(tokens []queryToken) ([]AudioInfo, error) {
+	rows, err := c.db.Query(`
+		SELECT id, schema_type, name, description, content_url, encoding_format,
+		       duration, date_published, in_language, genre, identifiers, by_artist,
+		       in_album, isrc_code, recording_of, checksum, checksum_algorithm,
+		       created, updated
+		FROM audio_files`)
+	if err != nil {
+		return nil, fmt.Errorf("fuzzy scan: %w", err)
+	}
+	defer rows.Close()
+
+	var results []AudioInfo
+	for rows.Next() {
+		info, err := scanAudioInfo(rows)
+		if err != nil {
+			return nil, err
+		}
+		fieldWords := collectFieldWords(info)
+		allMatch := true
+		for _, tok := range tokens {
+			thresh := fuzzyThreshold(len([]rune(tok.pattern)))
+			var candidates []string
+			if tok.field != "" {
+				candidates = fieldWords[tok.field]
+			} else {
+				for _, f := range allSearchFields {
+					candidates = append(candidates, fieldWords[f]...)
+				}
+			}
+			matched := false
+			for _, w := range candidates {
+				if levenshtein(tok.pattern, w) <= thresh {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				allMatch = false
+				break
+			}
+		}
+		if allMatch {
+			results = append(results, info)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("fuzzy scan rows: %w", err)
+	}
+	if results == nil {
+		results = []AudioInfo{}
+	}
+	return results, nil
+}
+
+// regexSearch applies compiled regex (and literal substring for plain tokens) against all
+// records.  Plain tokens in a regex query are treated as case-insensitive substrings.
+// Returns an error immediately if any regex pattern fails to compile.
+func (c *Collection) regexSearch(tokens []queryToken) ([]AudioInfo, error) {
+	compiled := make([]*regexp.Regexp, len(tokens))
+	for i, tok := range tokens {
+		pat := tok.pattern
+		if !tok.isRegex {
+			pat = regexp.QuoteMeta(pat)
+		}
+		re, err := regexp.Compile("(?i)" + pat)
+		if err != nil {
+			return nil, fmt.Errorf("invalid regex %q: %w", tok.pattern, err)
+		}
+		compiled[i] = re
+	}
+
+	rows, err := c.db.Query(`
+		SELECT id, schema_type, name, description, content_url, encoding_format,
+		       duration, date_published, in_language, genre, identifiers, by_artist,
+		       in_album, isrc_code, recording_of, checksum, checksum_algorithm,
+		       created, updated
+		FROM audio_files`)
+	if err != nil {
+		return nil, fmt.Errorf("regex scan: %w", err)
+	}
+	defer rows.Close()
+
+	var results []AudioInfo
+	for rows.Next() {
+		info, err := scanAudioInfo(rows)
+		if err != nil {
+			return nil, err
+		}
+		fieldText := collectFieldText(info)
+		allMatch := true
+		for i, tok := range tokens {
+			var fields []string
+			if tok.field != "" {
+				fields = []string{tok.field}
+			} else {
+				fields = allSearchFields
+			}
+			matched := false
+			for _, f := range fields {
+				if compiled[i].MatchString(fieldText[f]) {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				allMatch = false
+				break
+			}
+		}
+		if allMatch {
+			results = append(results, info)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("regex scan rows: %w", err)
+	}
+	if results == nil {
+		results = []AudioInfo{}
+	}
+	return results, nil
 }
 
 /** Create inserts a new AudioInfo record into the collection and returns its generated UUID.
@@ -659,42 +953,54 @@ func (c *Collection) queryDistinctColumn(col string) ([]string, error) {
 	return items, nil
 }
 
-/** SearchAudioFiles performs a full-text search against the FTS5 search index, modelled on
- * OpenSearch's default query behaviour.
+/** SearchAudioFiles searches the collection using a flexible query syntax.
  *
- * The query string is split into whitespace-separated terms.  Every term must match at
- * least one of the indexed fields (AND-of-OR semantics).  Each term is matched with
- * auto-fuzziness to tolerate typos:
+ * Query tokens are whitespace-separated; every token must match (AND semantics).
+ * Three token forms are supported:
  *
- *   ≤2 chars  exact match
- *   3–5 chars  edit distance 1  (one insertion / deletion / substitution)
- *   6+ chars   edit distance 2  (e.g. covers transpositions like "Melkit" → "Meklit")
+ *   word            plain term — FTS5 exact match, then Levenshtein fuzzy fallback
+ *   /pattern/       RE2 regex — case-insensitive, matched as substring across all fields
+ *   field:word      plain term scoped to a specific field
+ *   field:/pattern/ regex scoped to a specific field
  *
- * Fields searched: name (recording title), in_album, genre, recording_of, and each
- * artist's name.  Results are ordered by FTS5 relevance rank (best match first).
+ * Field aliases: title/name, album, artist, genre, recording/recording_of.
+ *
+ * For plain queries the search runs FTS5 first (fast, relevance-ranked) and falls back
+ * to a full Levenshtein scan when FTS5 finds nothing.  Fuzzy thresholds mirror
+ * OpenSearch AUTO: ≤2 chars exact, 3–5 chars edit-distance 1, 6+ edit-distance 2.
+ *
+ * Any token containing a /regex/ causes the entire query to use regexSearch (full scan).
+ * An invalid regex pattern returns an error.
  *
  * Parameters:
- *   query (string) — space-separated search terms, e.g. "infinity" or "miles davis"
+ *   query (string) — search query, e.g. "Bach", "artist:Gould", "artist:/Glenn Gould/"
  *
  * Returns:
- *   []AudioInfo — matching records ordered by relevance (empty slice when nothing matches)
- *   error       — non-nil on database failure
+ *   []AudioInfo — matching records (empty slice when nothing matches)
+ *   error       — non-nil on database failure or invalid regex
  *
  * Example:
- *   results, err := col.SearchAudioFiles("Melkit")   // finds artist "Meklit" via fuzzy match
- *   results, err := col.SearchAudioFiles("miles davis")
+ *   results, err := col.SearchAudioFiles("Melkit")                 // fuzzy — finds "Meklit"
+ *   results, err := col.SearchAudioFiles("artist:Gould")           // field-scoped plain
+ *   results, err := col.SearchAudioFiles("artist:/Glenn Gould/")   // field-scoped regex
+ *   results, err := col.SearchAudioFiles("/Bach/ genre:Baroque")   // mixed
  */
 func (c *Collection) SearchAudioFiles(query string) ([]AudioInfo, error) {
 	if !c.isOpen {
 		return nil, fmt.Errorf("collection is not open")
 	}
-	terms := strings.Fields(query)
-	if len(terms) == 0 {
+	tokens := parseQuery(query)
+	if len(tokens) == 0 {
 		return []AudioInfo{}, nil
 	}
 
-	ftsQuery := buildFTS5Query(terms)
+	// Any regex token routes the whole query through regexSearch.
+	if hasRegexToken(tokens) {
+		return c.regexSearch(tokens)
+	}
 
+	// Plain tokens: FTS5 fast path with Levenshtein fuzzy fallback.
+	ftsQuery := buildFTS5Query(tokens)
 	rows, err := c.db.Query(`
 		SELECT a.id, a.schema_type, a.name, a.description, a.content_url, a.encoding_format,
 		       a.duration, a.date_published, a.in_language, a.genre, a.identifiers, a.by_artist,
@@ -707,8 +1013,8 @@ func (c *Collection) SearchAudioFiles(query string) ([]AudioInfo, error) {
 		ftsQuery,
 	)
 	if err != nil {
-		// FTS5 may reject malformed query strings; treat as empty result rather than error.
-		return []AudioInfo{}, nil
+		// FTS5 may reject malformed query strings; fall through to fuzzy.
+		return c.fuzzySearch(tokens)
 	}
 	defer rows.Close()
 
@@ -723,8 +1029,9 @@ func (c *Collection) SearchAudioFiles(query string) ([]AudioInfo, error) {
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterating search results: %w", err)
 	}
-	if results == nil {
-		results = []AudioInfo{}
+	if len(results) == 0 {
+		// FTS5 found nothing — try Levenshtein fuzzy scan as fallback.
+		return c.fuzzySearch(tokens)
 	}
 	return results, nil
 }

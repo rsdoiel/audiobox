@@ -4,5 +4,6 @@
 *.swp
 *.bak
 bin
+man
 dist
 testout

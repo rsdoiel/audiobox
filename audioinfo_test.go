@@ -12,7 +12,7 @@ import (
 
 const (
 	testCollectionName = "test_collection"
-	testRootDir        = "./testdata"
+	testMusicDir        = "./testdata"
 	testDescription    = "Test Collection"
 )
 
@@ -34,7 +34,7 @@ func setupTestCollection(t *testing.T) (*Collection, func()) {
 		t.Fatalf("chdir to temp: %v", err)
 	}
 
-	col, err := NewCollection(testCollectionName, testRootDir, testDescription)
+	col, err := NewCollection(testCollectionName, testMusicDir, testDescription)
 	if err != nil {
 		os.Chdir(orig)
 		t.Fatalf("NewCollection: %v", err)
@@ -54,7 +54,7 @@ func sampleInfo(suffix string) AudioInfo {
 		InAlbum:        "Test Album " + suffix,
 		Genre:          "Classical",
 		Description:    "A test recording",
-		ContentURL:     filepath.Join(testRootDir, "test_"+suffix+".mp3"),
+		ContentURL:     filepath.Join(testMusicDir, "test_"+suffix+".mp3"),
 		EncodingFormat: "audio/mpeg",
 		ByArtist:       []Agent{{Type: "Person", Name: "Test Artist " + suffix}},
 		Identifiers:    Identifiers{{PropertyID: PropertyDOI, Value: "10.1234/" + suffix}},
@@ -181,7 +181,7 @@ func TestGetAlbums(t *testing.T) {
 	for i, album := range []string{"Album A", "Album B", "Album A"} {
 		info := sampleInfo(fmt.Sprintf("alb%d", i))
 		info.InAlbum = album
-		info.ContentURL = filepath.Join(testRootDir, fmt.Sprintf("alb%d.mp3", i))
+		info.ContentURL = filepath.Join(testMusicDir, fmt.Sprintf("alb%d.mp3", i))
 		if _, err := col.Create(info); err != nil {
 			t.Fatalf("Create: %v", err)
 		}
@@ -203,7 +203,7 @@ func TestGetArtists(t *testing.T) {
 	for i, artist := range []string{"Artist X", "Artist Y", "Artist X"} {
 		info := sampleInfo(fmt.Sprintf("art%d", i))
 		info.ByArtist = []Agent{{Type: "Person", Name: artist}}
-		info.ContentURL = filepath.Join(testRootDir, fmt.Sprintf("art%d.mp3", i))
+		info.ContentURL = filepath.Join(testMusicDir, fmt.Sprintf("art%d.mp3", i))
 		if _, err := col.Create(info); err != nil {
 			t.Fatalf("Create: %v", err)
 		}
@@ -225,7 +225,7 @@ func TestGetTitles(t *testing.T) {
 	for i, title := range []string{"Title 1", "Title 2", "Title 1"} {
 		info := sampleInfo(fmt.Sprintf("ttl%d", i))
 		info.Name = title
-		info.ContentURL = filepath.Join(testRootDir, fmt.Sprintf("ttl%d.mp3", i))
+		info.ContentURL = filepath.Join(testMusicDir, fmt.Sprintf("ttl%d.mp3", i))
 		if _, err := col.Create(info); err != nil {
 			t.Fatalf("Create: %v", err)
 		}
@@ -246,17 +246,20 @@ func TestSearchAudioFiles(t *testing.T) {
 
 	infos := []AudioInfo{
 		{SchemaType: "MusicRecording", Name: "Goldberg Variations", InAlbum: "Bach: Keyboard Works",
-			Genre: "Baroque", ContentURL: testRootDir + "/goldberg.mp3", EncodingFormat: "audio/mpeg",
+			Genre: "Baroque", ContentURL: testMusicDir + "/goldberg.mp3", EncodingFormat: "audio/mpeg",
 			ByArtist: []Agent{{Type: "Person", Name: "Glenn Gould"}}},
 		{SchemaType: "MusicRecording", Name: "Well-Tempered Clavier", InAlbum: "Bach: Keyboard Works",
-			Genre: "Baroque", ContentURL: testRootDir + "/wtc.mp3", EncodingFormat: "audio/mpeg",
+			Genre: "Baroque", ContentURL: testMusicDir + "/wtc.mp3", EncodingFormat: "audio/mpeg",
 			ByArtist: []Agent{{Type: "Person", Name: "Glenn Gould"}}},
 		{SchemaType: "MusicRecording", Name: "Moonlight Sonata", InAlbum: "Beethoven: Piano Sonatas",
-			Genre: "Classical", ContentURL: testRootDir + "/moonlight.mp3", EncodingFormat: "audio/mpeg",
+			Genre: "Classical", ContentURL: testMusicDir + "/moonlight.mp3", EncodingFormat: "audio/mpeg",
 			ByArtist: []Agent{{Type: "Person", Name: "Daniel Barenboim"}}},
 		{SchemaType: "MusicRecording", Name: "Infinity", InAlbum: "Infinity Recordings Vol. 1",
-			Genre: "Folk", ContentURL: testRootDir + "/infinity.mp3", EncodingFormat: "audio/mpeg",
+			Genre: "Folk", ContentURL: testMusicDir + "/infinity.mp3", EncodingFormat: "audio/mpeg",
 			ByArtist: []Agent{{Type: "Organization", Name: "Folkways Ensemble"}}},
+		{SchemaType: "MusicRecording", Name: "Ambassel", InAlbum: "On A Day Like This",
+			Genre: "World", ContentURL: testMusicDir + "/ambassel.mp3", EncodingFormat: "audio/mpeg",
+			ByArtist: []Agent{{Type: "Person", Name: "Meklit"}}},
 	}
 	for _, info := range infos {
 		if _, err := col.Create(info); err != nil {
@@ -280,6 +283,20 @@ func TestSearchAudioFiles(t *testing.T) {
 		{"Bach Barenboim", 0, "multi-term: no record spans both"},
 		{"", 0, "empty query"},
 		{"' OR '1'='1", 0, "SQL injection attempt"},
+		{"Melkit", 1, "fuzzy: typo Melkit matches artist Meklit"},
+		// Field-scoped plain terms
+		{"artist:Gould", 2, "field scope: artist plain"},
+		{"artist:Barenboim", 1, "field scope: artist single"},
+		{"genre:Baroque", 2, "field scope: genre"},
+		{"artist:Gould genre:Baroque", 2, "field scope: artist + genre AND"},
+		{"title:Goldberg", 1, "field scope: title alias"},
+		{"album:Bach", 2, "field scope: album alias"},
+		// Regex queries
+		{"/Goldberg.*/", 1, "unscoped regex: title prefix"},
+		{"artist:/Gould.*/", 2, "field regex: artist"},
+		{"album:/Bach.*/", 2, "field regex: album prefix"},
+		{"/Goldberg/ genre:Baroque", 1, "mixed: unscoped regex + field plain"},
+		{"/[Gg]ould/", 2, "regex: character class"},
 	}
 
 	for _, tc := range cases {
@@ -293,13 +310,60 @@ func TestSearchAudioFiles(t *testing.T) {
 			}
 		})
 	}
+
+	// Invalid regex must return an error, not empty results.
+	t.Run("invalid regex returns error", func(t *testing.T) {
+		_, err := col.SearchAudioFiles("/[unclosed/")
+		if err == nil {
+			t.Error("expected error for invalid regex, got nil")
+		}
+	})
+}
+
+func TestParseQuery(t *testing.T) {
+	cases := []struct {
+		input  string
+		tokens []queryToken
+	}{
+		{"", nil},
+		{"Bach", []queryToken{{pattern: "Bach"}}},
+		{"/Bach.*/", []queryToken{{pattern: "Bach.*", isRegex: true}}},
+		{"artist:Gould", []queryToken{{field: "artist_names", pattern: "Gould"}}},
+		{"artist:/Gould.*/", []queryToken{{field: "artist_names", pattern: "Gould.*", isRegex: true}}},
+		{"title:Goldberg", []queryToken{{field: "name", pattern: "Goldberg"}}},
+		{"album:Bach", []queryToken{{field: "in_album", pattern: "Bach"}}},
+		{"genre:Baroque", []queryToken{{field: "genre", pattern: "Baroque"}}},
+		// Unknown field alias — treated as plain unscoped term.
+		{"Bach:Keyboard", []queryToken{{pattern: "Bach:Keyboard"}}},
+		// Slash at start but no closing slash — plain term.
+		{"/unclosed", []queryToken{{pattern: "/unclosed"}}},
+		// Multi-token
+		{"artist:Gould genre:Baroque", []queryToken{
+			{field: "artist_names", pattern: "Gould"},
+			{field: "genre", pattern: "Baroque"},
+		}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.input, func(t *testing.T) {
+			got := parseQuery(tc.input)
+			if len(got) != len(tc.tokens) {
+				t.Fatalf("len=%d, want %d: %+v", len(got), len(tc.tokens), got)
+			}
+			for i, want := range tc.tokens {
+				if got[i] != want {
+					t.Errorf("token[%d] = %+v, want %+v", i, got[i], want)
+				}
+			}
+		})
+	}
 }
 
 func TestScanDirectoriesWithProcessor(t *testing.T) {
 	col, cleanup := setupTestCollection(t)
 	defer cleanup()
 
-	testFile := filepath.Join(testRootDir, "scan_test.mp3")
+	testFile := filepath.Join(testMusicDir, "scan_test.mp3")
 	f, err := os.Create(testFile)
 	if err != nil {
 		t.Fatalf("creating test file: %v", err)

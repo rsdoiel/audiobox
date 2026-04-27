@@ -25,7 +25,7 @@ ACTIONS
     Initialise a new collection.  Missing arguments are prompted interactively.
 
   scan COLLECTION.yaml
-    Walk the collection's rootDir and ingest every audio file found.
+    Walk the collection's musicDir and ingest every audio file found.
 
   list COLLECTION.yaml [albums|artists|titles]
     List distinct albums, artists, or titles (default: albums).
@@ -38,6 +38,9 @@ ACTIONS
 
   delete COLLECTION.yaml ID
     Remove the record with the given UUID from the collection.
+
+  server COLLECTION.yaml
+    Start a localhost web server for the collection.
 
   help [ACTION]
     Display detailed help for an action.

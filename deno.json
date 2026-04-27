@@ -1,0 +1,10 @@
+{
+  "compilerOptions": {
+    "lib": ["dom", "dom.iterable", "esnext", "deno.ns"],
+    "strict": true
+  },
+  "imports": {
+    "@std/assert": "jsr:@std/assert@^1.0.0",
+    "deno-dom": "jsr:@b-fuze/deno-dom@^0.1.48"
+  }
+}

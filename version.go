@@ -12,7 +12,7 @@ const (
     ReleaseDate = "2026-04-24"
 
     // ReleaseHash, the Git hash when version.go was generated
-    ReleaseHash = "f0d0603"
+    ReleaseHash = "c56db83"
     LicenseText = `
 audioinfo a Go module for managing audio metadata in a SQLite3 database
 Copyright (C) 2026 R. S. Doiel
