@@ -17,7 +17,8 @@
   "name": "audioinfo",
   "license": "https://www.gnu.org/licenses/agpl-3.0.txt",
   "programmingLanguage": [
-    "Go >= 1.26.2"
+    "Go >= 1.26.2",
+    "TypeScript"
   ],
   "softwareRequirements": [
     "Go >= 1.26.2"
@@ -25,7 +26,9 @@
   "softwareSuggestions": [
     "CMTools >= 0.0.40",
     "Pandoc >= 3.1",
-    "GNU Make >= 3"
+    "GNU Make >= 3",
+    "Deno >= 2.4.0",
+    "FFmpeg >= 6.0"
   ],
   "version": "0.0.0",
   "developmentStatus": "concept",

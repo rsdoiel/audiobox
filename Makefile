@@ -44,7 +44,7 @@ ifeq ($(OS), Windows)
 	EXT = .exe
 endif
 
-build: version.go $(PROGRAMS) man CITATION.cff about.md installer.sh installer.ps1
+build: version.go $(PROGRAMS) man CITATION.cff about.md installer.sh installer.ps1 bundle
 
 version.go: .FORCE
 	cmt codemeta.json version.go
@@ -88,8 +88,15 @@ installer.ps1: .FORCE
 	cmt codemeta.json installer.ps1
 
 
+bundle: htdocs/module/audioinfo.js
+
+htdocs/module/audioinfo.js: audioinfo_player.ts audioinfo_api.ts deno.json
+	@mkdir -p htdocs/module
+	deno task bundle
+
 test: $(PACKAGE)
 	go test
+	deno task test
 
 website: clean-website .FORCE
 	make -f website.mak
@@ -114,6 +121,7 @@ clean:
 	@if [ -d dist ]; then rm -fR dist; fi
 	@if [ -d man ]; then rm -fR man; fi
 	@if [ -d testout ]; then rm -fR testout; fi
+	@if [ -d htdocs/module ]; then rm -fR htdocs/module; fi
 
 clean-website:
 	@for FNAME in $(HTML_PAGES); do if [ -f "$${FNAME}" ]; then rm "$${FNAME}"; fi; done

@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -380,16 +381,19 @@ var allSearchFields = []string{"name", "in_album", "genre", "recording_of", "art
 
 /** parseQuery splits a query string into queryTokens.
  *
- * Supported syntax (tokens are whitespace-separated):
- *   word           — unscoped plain term
- *   /pattern/      — unscoped regex (RE2 syntax, case-insensitive)
- *   field:word     — plain term scoped to a known field alias
- *   field:/pattern/ — regex scoped to a known field alias
+ * Supported syntax:
+ *   word                — unscoped plain term
+ *   "multi word phrase" — unscoped quoted phrase (spaces preserved)
+ *   /pattern/           — unscoped regex (RE2 syntax, case-insensitive)
+ *   field:word          — plain term scoped to a known field alias
+ *   field:"multi word"  — quoted phrase scoped to a field
+ *   field:/pattern/     — regex scoped to a known field alias
  *
  * Field aliases: title/name, album, artist, genre, recording/recording_of.
- * A colon prefix is only treated as a field scope when the word before it is a
- * known alias; otherwise the whole token is a plain unscoped term.
- * A /pattern/ is only treated as regex when it both starts and ends with '/'.
+ * A colon is treated as a field scope only when the word before it is a known
+ * alias; otherwise the entire token is a plain unscoped term.
+ * A /pattern/ is regex only when a matching closing '/' exists.
+ * A "phrase" is a quoted phrase only when a matching closing '"' exists.
  *
  * Parameters:
  *   query (string) — raw query string from the user
@@ -398,31 +402,74 @@ var allSearchFields = []string{"name", "in_album", "genre", "recording_of", "art
  *   []queryToken — parsed tokens; empty slice when query is blank
  *
  * Example:
- *   tokens := parseQuery("artist:/Glenn Gould/ Baroque")
- *   // [{field:"artist_names", pattern:"Glenn Gould", isRegex:true},
+ *   tokens := parseQuery(`artist:"Glenn Gould" Baroque`)
+ *   // [{field:"artist_names", pattern:"Glenn Gould", isRegex:false},
  *   //  {field:"",             pattern:"Baroque",     isRegex:false}]
  */
 func parseQuery(query string) []queryToken {
-	raw := strings.Fields(query)
-	tokens := make([]queryToken, 0, len(raw))
-	for _, part := range raw {
+	tokens := make([]queryToken, 0)
+	i, n := 0, len(query)
+	for i < n {
+		// Skip whitespace.
+		for i < n && (query[i] == ' ' || query[i] == '\t') {
+			i++
+		}
+		if i >= n {
+			break
+		}
 		tok := queryToken{}
 
-		// Check for field: prefix.
-		if idx := strings.IndexByte(part, ':'); idx > 0 {
-			alias := strings.ToLower(part[:idx])
+		// Look for a field: prefix — scan to the next ':', ' ', or '\t'.
+		j := i
+		for j < n && query[j] != ':' && query[j] != ' ' && query[j] != '\t' {
+			j++
+		}
+		if j < n && query[j] == ':' && j > i {
+			alias := strings.ToLower(query[i:j])
 			if col, ok := fieldAliases[alias]; ok {
 				tok.field = col
-				part = part[idx+1:]
+				i = j + 1 // advance past ':'
 			}
 		}
+		if i >= n {
+			break
+		}
 
-		// Check for /pattern/ regex delimiters.
-		if len(part) >= 2 && part[0] == '/' && part[len(part)-1] == '/' {
-			tok.isRegex = true
-			tok.pattern = part[1 : len(part)-1]
-		} else {
-			tok.pattern = part
+		switch query[i] {
+		case '"':
+			// Quoted phrase: read until the next '"'.
+			if ci := strings.IndexByte(query[i+1:], '"'); ci >= 0 {
+				tok.pattern = query[i+1 : i+1+ci]
+				i = i + 1 + ci + 1
+			} else {
+				// No closing '"' — treat as a plain term including the opening '"'.
+				start := i
+				for i < n && query[i] != ' ' && query[i] != '\t' {
+					i++
+				}
+				tok.pattern = query[start:i]
+			}
+		case '/':
+			// Regex: read until the next '/'.
+			if ci := strings.IndexByte(query[i+1:], '/'); ci >= 0 {
+				tok.pattern = query[i+1 : i+1+ci]
+				tok.isRegex = true
+				i = i + 1 + ci + 1
+			} else {
+				// No closing '/' — treat as a plain term.
+				start := i
+				for i < n && query[i] != ' ' && query[i] != '\t' {
+					i++
+				}
+				tok.pattern = query[start:i]
+			}
+		default:
+			// Plain term: read until whitespace.
+			start := i
+			for i < n && query[i] != ' ' && query[i] != '\t' {
+				i++
+			}
+			tok.pattern = query[start:i]
 		}
 
 		if tok.pattern != "" {
@@ -910,6 +957,7 @@ func (c *Collection) GetArtists() ([]string, error) {
 	for name := range seen {
 		result = append(result, name)
 	}
+	sort.Strings(result)
 	return result, nil
 }
 
