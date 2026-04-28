@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en-US">
+<head>
+    <title>audioinfo</title>
+    <link rel="stylesheet" href="/css/site.css">
+</head>
+<body>
+<nav>
+<ul>
+    <li><a href="/">Home</a></li>
+    <li><a href="index.html">README</a></li>
+    <li><a href="LICENSE">LICENSE</a></li>
+    <li><a href="INSTALL.html">INSTALL</a></li>
+    <li><a href="user_manual.html">User Manual</a></li>
+    <li><a href="about.html">About</a></li>
+    <li><a href="search.html">Search</a></li>
+    <li><a href="https://github.com/rsdoiel/audioinfo">GitHub</a></li>
+</ul>
+</nav>
+<section>
+<p>./bin/audioinfo(1) — audio collection metadata manager</p>
+<p>SYNOPSIS</p>
+<p>./bin/audioinfo [OPTIONS] ACTION [COLLECTION.yaml] [PARAMETERS]</p>
+<p>OPTIONS</p>
+<p>-h, -help display this help message</p>
+<p>-l, -license display license information</p>
+<p>-v, -version display version information</p>
+<p>-fmt FORMAT output format for list/search/show: text, json, yaml, xml
+(default: text)</p>
+<p>ACTIONS</p>
+<p>init [NAME [ROOTDIR [DESCRIPTION]]] Initialise a new collection.
+Missing arguments are prompted interactively.</p>
+<p>scan COLLECTION.yaml Walk the collection’s audioDir and ingest every
+audio file found.</p>
+<p>list COLLECTION.yaml [albums|artists|titles] List distinct albums,
+artists, or titles (default: albums).</p>
+<p>search COLLECTION.yaml QUERY Search records by title, album, or
+artist.</p>
+<p>show COLLECTION.yaml ID Display full metadata for the record with the
+given UUID.</p>
+<p>delete COLLECTION.yaml ID Remove the record with the given UUID from
+the collection.</p>
+<p>server COLLECTION.yaml Start a localhost web server for the
+collection.</p>
+<p>help [ACTION] Display detailed help for an action.</p>
+<p>EXAMPLES</p>
+<p>./bin/audioinfo init mymusic ~/Music “My personal archive”
+./bin/audioinfo scan mymusic.yaml ./bin/audioinfo list mymusic.yaml
+artists ./bin/audioinfo search mymusic.yaml “Bach” ./bin/audioinfo show
+mymusic.yaml 550e8400-e29b-41d4-a716-446655440000 ./bin/audioinfo delete
+mymusic.yaml 550e8400-e29b-41d4-a716-446655440000</p>
+<p>SEE ALSO</p>
+<p>./bin/audioinfo(1) man page, https://github.com/rsdoiel/audioinfo</p>
+</section>
+</body>
+</html>

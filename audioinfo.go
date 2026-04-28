@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -40,7 +41,8 @@ import (
  *   Identifiers        (Identifiers) — schema:identifier list (DOI, ISRC, ARK, etc.)
  *   ByArtist           ([]Agent)    — schema:byArtist — performers (Person or Organization)
  *   InAlbum            (string)     — schema:inAlbum
- *   TrackNumber        (int)        — track position within the album (0 = unknown)
+ *   DiscNumber         (int)        — disc number within a multi-disc set (0 = unknown/single disc)
+ *   TrackNumber        (int)        — track position within the disc (0 = unknown)
  *   IsrcCode           (string)     — schema:isrcCode
  *   RecordingOf        (string)     — schema:recordingOf — composition title if different from Name
  *   Checksum           (string)     — hex-encoded SHA-256 of the file at ingest
@@ -70,6 +72,7 @@ type AudioInfo struct {
 	Identifiers       Identifiers
 	ByArtist          []Agent
 	InAlbum           string
+	DiscNumber        int
 	TrackNumber       int
 	IsrcCode          string
 	RecordingOf       string
@@ -212,8 +215,10 @@ func (c *Collection) ProcessAudioFile(filePath string, logger *log.Logger) error
 		logger.Printf("warning: could not read tags from %s: %v", filePath, err)
 	} else {
 		trackNum, _ := meta.Track()
+		discNum, _ := meta.Disc()
 		info.Name = meta.Title()
 		info.InAlbum = meta.Album()
+		info.DiscNumber = discNum
 		info.TrackNumber = trackNum
 		info.Genre = meta.Genre()
 		if meta.Year() != 0 {
@@ -221,6 +226,19 @@ func (c *Collection) ProcessAudioFile(filePath string, logger *log.Logger) error
 		}
 		info.ByArtist = []Agent{{Type: "Person", Name: meta.Artist()}}
 		info.Identifiers = Identifiers{}
+	}
+
+	// Filename fallback: when tags did not supply disc or track numbers, parse
+	// them from the filename using common naming conventions.
+	if info.DiscNumber == 0 || info.TrackNumber == 0 {
+		stem := strings.TrimSuffix(filepath.Base(filePath), filepath.Ext(filePath))
+		d, t := parseDiscTrackFromFilename(stem)
+		if info.DiscNumber == 0 && d > 0 {
+			info.DiscNumber = d
+		}
+		if info.TrackNumber == 0 && t > 0 {
+			info.TrackNumber = t
+		}
 	}
 
 	var existingID string
@@ -597,7 +615,7 @@ func (c *Collection) fuzzySearch(tokens []queryToken) ([]AudioInfo, error) {
 	rows, err := c.db.Query(`
 		SELECT id, schema_type, name, description, content_url, encoding_format,
 		       duration, date_published, in_language, genre, identifiers, by_artist,
-		       in_album, track_number, isrc_code, recording_of, checksum, checksum_algorithm,
+		       in_album, disc_number, track_number, isrc_code, recording_of, checksum, checksum_algorithm,
 		       created, updated
 		FROM audio_files`)
 	if err != nil {
@@ -668,7 +686,7 @@ func (c *Collection) regexSearch(tokens []queryToken) ([]AudioInfo, error) {
 	rows, err := c.db.Query(`
 		SELECT id, schema_type, name, description, content_url, encoding_format,
 		       duration, date_published, in_language, genre, identifiers, by_artist,
-		       in_album, track_number, isrc_code, recording_of, checksum, checksum_algorithm,
+		       in_album, disc_number, track_number, isrc_code, recording_of, checksum, checksum_algorithm,
 		       created, updated
 		FROM audio_files`)
 	if err != nil {
@@ -750,12 +768,12 @@ func (c *Collection) Create(info AudioInfo) (string, error) {
 		INSERT INTO audio_files (
 			id, schema_type, name, description, content_url, encoding_format,
 			duration, date_published, in_language, genre, identifiers, by_artist,
-			in_album, track_number, isrc_code, recording_of, checksum, checksum_algorithm,
+			in_album, disc_number, track_number, isrc_code, recording_of, checksum, checksum_algorithm,
 			created, updated
-		) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		info.ID, info.SchemaType, info.Name, info.Description, info.ContentURL,
 		info.EncodingFormat, info.Duration, info.DatePublished, info.InLanguage,
-		info.Genre, idsJSON, artistsJSON, info.InAlbum, info.TrackNumber, info.IsrcCode,
+		info.Genre, idsJSON, artistsJSON, info.InAlbum, info.DiscNumber, info.TrackNumber, info.IsrcCode,
 		info.RecordingOf, info.Checksum, info.ChecksumAlgorithm,
 		info.Created, info.Updated,
 	)
@@ -795,12 +813,12 @@ func (c *Collection) Read(id string) (AudioInfo, error) {
 	err := c.db.QueryRow(`
 		SELECT id, schema_type, name, description, content_url, encoding_format,
 		       duration, date_published, in_language, genre, identifiers, by_artist,
-		       in_album, track_number, isrc_code, recording_of, checksum, checksum_algorithm,
+		       in_album, disc_number, track_number, isrc_code, recording_of, checksum, checksum_algorithm,
 		       created, updated
 		FROM audio_files WHERE id = ?`, id).Scan(
 		&info.ID, &info.SchemaType, &info.Name, &info.Description, &info.ContentURL,
 		&info.EncodingFormat, &info.Duration, &info.DatePublished, &info.InLanguage,
-		&info.Genre, &idsJSON, &artistsJSON, &info.InAlbum, &info.TrackNumber, &info.IsrcCode,
+		&info.Genre, &idsJSON, &artistsJSON, &info.InAlbum, &info.DiscNumber, &info.TrackNumber, &info.IsrcCode,
 		&info.RecordingOf, &info.Checksum, &info.ChecksumAlgorithm,
 		&info.Created, &info.Updated,
 	)
@@ -849,12 +867,12 @@ func (c *Collection) Update(id string, info AudioInfo) error {
 		UPDATE audio_files SET
 			schema_type=?, name=?, description=?, content_url=?, encoding_format=?,
 			duration=?, date_published=?, in_language=?, genre=?, identifiers=?,
-			by_artist=?, in_album=?, track_number=?, isrc_code=?, recording_of=?,
+			by_artist=?, in_album=?, disc_number=?, track_number=?, isrc_code=?, recording_of=?,
 			checksum=?, checksum_algorithm=?, updated=?
 		WHERE id=?`,
 		info.SchemaType, info.Name, info.Description, info.ContentURL, info.EncodingFormat,
 		info.Duration, info.DatePublished, info.InLanguage, info.Genre,
-		idsJSON, artistsJSON, info.InAlbum, info.TrackNumber, info.IsrcCode, info.RecordingOf,
+		idsJSON, artistsJSON, info.InAlbum, info.DiscNumber, info.TrackNumber, info.IsrcCode, info.RecordingOf,
 		info.Checksum, info.ChecksumAlgorithm, info.Updated, id,
 	)
 	if err != nil {
@@ -899,12 +917,69 @@ func (c *Collection) Delete(id string) error {
 	return nil
 }
 
-/** GetAlbumEntries returns a sorted list of distinct album releases in the collection.
- * Albums are identified by the combination of their name and the directory that holds
- * their tracks. Two releases with the same in_album tag but stored in different folders
- * (e.g. a US pressing and a UK pressing) appear as separate Album entries.
- * When names collide across directories, DisplayName includes the directory basename
- * as a qualifier so the caller can distinguish them.
+// deslugify converts a directory-name slug into a human-readable album title.
+// Hyphens and underscores are treated as space placeholders; other characters
+// (including parentheses, apostrophes, digits) are preserved as-is.
+// "801-Live-(American-Release)" → "801 Live (American Release)"
+func deslugify(s string) string {
+	s = strings.NewReplacer("-", " ", "_", " ").Replace(s)
+	return strings.Join(strings.Fields(s), " ")
+}
+
+// reDiscParens matches "(Disc N) TT …"
+// reDiscSlug  matches "Disc-N-TT…" (slugified multi-disc)
+// reDiscTrack matches "N-TT " or "NN-TT-" (numeric disc-track with hyphen)
+// reTrackOnly matches "TT " or "TT-" (track number at start, disc implied = 1)
+var (
+	reDiscParens = regexp.MustCompile(`^\(Disc\s+(\d+)\)\s+(\d+)`)
+	reDiscSlug   = regexp.MustCompile(`(?i)^Disc-(\d+)-(\d+)`)
+	reDiscTrack  = regexp.MustCompile(`^(\d+)-(\d{2})[\s\-]`)
+	reTrackOnly  = regexp.MustCompile(`^(\d+)[\s\-]`)
+)
+
+// parseDiscTrackFromFilename extracts disc and track numbers from a filename stem
+// (no extension) using common music library naming conventions.
+// Returns (0, 0) when no recognisable pattern is found.
+func parseDiscTrackFromFilename(stem string) (disc, track int) {
+	if m := reDiscParens.FindStringSubmatch(stem); m != nil {
+		disc, _ = strconv.Atoi(m[1])
+		track, _ = strconv.Atoi(m[2])
+		return
+	}
+	if m := reDiscSlug.FindStringSubmatch(stem); m != nil {
+		disc, _ = strconv.Atoi(m[1])
+		track, _ = strconv.Atoi(m[2])
+		return
+	}
+	if m := reDiscTrack.FindStringSubmatch(stem); m != nil {
+		disc, _ = strconv.Atoi(m[1])
+		track, _ = strconv.Atoi(m[2])
+		return
+	}
+	if m := reTrackOnly.FindStringSubmatch(stem); m != nil {
+		disc = 1
+		track, _ = strconv.Atoi(m[1])
+		if track == 0 {
+			// "00 …" prefix means unlisted/bonus; leave disc=1, track=0
+			disc = 0
+		}
+		return
+	}
+	return 0, 0
+}
+
+/** GetAlbumEntries returns a sorted list of album entries derived from the
+ * directory structure of the collection. Each unique directory that contains
+ * audio files becomes one Album entry; the album name is produced by deslugifying
+ * the directory's base name (replacing hyphens/underscores with spaces).
+ *
+ * This approach means the directory layout is the authoritative source for album
+ * identity, which correctly handles releases whose embedded in_album tags are
+ * incomplete or missing.  "801-Live-(American-Release)" becomes
+ * "801 Live (American Release)" regardless of what the MP3 tags say.
+ *
+ * When two different directories deslugify to the same name, both DisplayNames
+ * are qualified with their parent directory basename.
  *
  * Returns:
  *   []Album — sorted by DisplayName
@@ -913,7 +988,7 @@ func (c *Collection) Delete(id string) error {
  * Example:
  *   albums, err := col.GetAlbumEntries()
  *   for _, a := range albums {
- *     fmt.Println(a.DisplayName) // e.g. "801 Live [801-Live-UK]"
+ *     fmt.Println(a.DisplayName) // e.g. "801 Live (American Release)"
  *   }
  */
 func (c *Collection) GetAlbumEntries() ([]Album, error) {
@@ -921,43 +996,43 @@ func (c *Collection) GetAlbumEntries() ([]Album, error) {
 		return nil, fmt.Errorf("collection is not open")
 	}
 	rows, err := c.db.Query(`
-		SELECT DISTINCT in_album, content_url
+		SELECT DISTINCT content_url
 		FROM audio_files
-		WHERE in_album != '' AND in_album IS NOT NULL
-		ORDER BY in_album`)
+		WHERE content_url != '' AND content_url IS NOT NULL`)
 	if err != nil {
 		return nil, fmt.Errorf("querying album entries: %w", err)
 	}
 	defer rows.Close()
 
-	type entry struct{ name, dir string }
-	// name → set of dirs that contain at least one track with that album name
-	nameDirs := make(map[string]map[string]struct{})
+	dirSet := make(map[string]struct{})
 	for rows.Next() {
-		var name, contentURL string
-		if err := rows.Scan(&name, &contentURL); err != nil {
-			return nil, fmt.Errorf("scanning album entry: %w", err)
+		var contentURL string
+		if err := rows.Scan(&contentURL); err != nil {
+			return nil, fmt.Errorf("scanning content_url: %w", err)
 		}
-		dir := filepath.Dir(contentURL)
-		if nameDirs[name] == nil {
-			nameDirs[name] = make(map[string]struct{})
-		}
-		nameDirs[name][dir] = struct{}{}
+		dirSet[filepath.Dir(contentURL)] = struct{}{}
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterating album entries: %w", err)
+		return nil, fmt.Errorf("iterating content_urls: %w", err)
+	}
+
+	type raw struct{ dir, name string }
+	raws := make([]raw, 0, len(dirSet))
+	nameCounts := make(map[string]int)
+	for dir := range dirSet {
+		name := deslugify(filepath.Base(dir))
+		raws = append(raws, raw{dir: dir, name: name})
+		nameCounts[name]++
 	}
 
 	var albums []Album
-	for name, dirs := range nameDirs {
-		qualify := len(dirs) > 1
-		for dir := range dirs {
-			displayName := name
-			if qualify {
-				displayName = name + " [" + filepath.Base(dir) + "]"
-			}
-			albums = append(albums, Album{Name: name, DisplayName: displayName, Dir: dir})
+	for _, r := range raws {
+		displayName := r.name
+		if nameCounts[r.name] > 1 {
+			// Two directories produce the same deslugified name; qualify with parent.
+			displayName = r.name + " [" + deslugify(filepath.Base(filepath.Dir(r.dir))) + "]"
 		}
+		albums = append(albums, Album{Name: r.name, DisplayName: displayName, Dir: r.dir})
 	}
 	sort.Slice(albums, func(i, j int) bool {
 		return albums[i].DisplayName < albums[j].DisplayName
@@ -974,15 +1049,16 @@ func escapeLIKE(s string) string {
 	return s
 }
 
-/** GetTracksByAlbum returns all audio tracks that belong to the given album release.
- * It matches on both the album name (in_album) and the release directory so that
- * same-named albums in different folders remain independent.
+/** GetTracksByAlbum returns all audio tracks stored in the given album's directory,
+ * sorted by disc number then track number then name. The directory is the sole
+ * filter — the in_album tag is not consulted — so releases whose tags are
+ * incomplete (e.g. "Live" instead of "801 Live") are handled correctly.
  *
  * Parameters:
  *   album (Album) — an entry obtained from GetAlbumEntries
  *
  * Returns:
- *   []AudioInfo — matching tracks, sorted by name; empty slice when none found
+ *   []AudioInfo — matching tracks in play order; empty slice when none found
  *   error       — non-nil on database failure
  *
  * Example:
@@ -997,14 +1073,14 @@ func (c *Collection) GetTracksByAlbum(album Album) ([]AudioInfo, error) {
 	rows, err := c.db.Query(`
 		SELECT id, schema_type, name, description, content_url, encoding_format,
 		       duration, date_published, in_language, genre, identifiers, by_artist,
-		       in_album, track_number, isrc_code, recording_of, checksum, checksum_algorithm,
+		       in_album, disc_number, track_number, isrc_code, recording_of, checksum, checksum_algorithm,
 		       created, updated
 		FROM audio_files
-		WHERE in_album = ? AND content_url LIKE ? ESCAPE '\'
-		ORDER BY track_number, name`,
-		album.Name, pattern)
+		WHERE content_url LIKE ? ESCAPE '\'
+		ORDER BY disc_number, track_number, name`,
+		pattern)
 	if err != nil {
-		return nil, fmt.Errorf("querying tracks for album %q in %q: %w", album.Name, album.Dir, err)
+		return nil, fmt.Errorf("querying tracks for album %q: %w", album.DisplayName, err)
 	}
 	defer rows.Close()
 
@@ -1188,7 +1264,7 @@ func (c *Collection) SearchAudioFiles(query string) ([]AudioInfo, error) {
 	rows, err := c.db.Query(`
 		SELECT a.id, a.schema_type, a.name, a.description, a.content_url, a.encoding_format,
 		       a.duration, a.date_published, a.in_language, a.genre, a.identifiers, a.by_artist,
-		       a.in_album, a.track_number, a.isrc_code, a.recording_of, a.checksum, a.checksum_algorithm,
+		       a.in_album, a.disc_number, a.track_number, a.isrc_code, a.recording_of, a.checksum, a.checksum_algorithm,
 		       a.created, a.updated
 		FROM search_index
 		JOIN audio_files a ON search_index.audio_id = a.id
@@ -1227,7 +1303,7 @@ func scanAudioInfo(rows *sql.Rows) (AudioInfo, error) {
 	err := rows.Scan(
 		&info.ID, &info.SchemaType, &info.Name, &info.Description, &info.ContentURL,
 		&info.EncodingFormat, &info.Duration, &info.DatePublished, &info.InLanguage,
-		&info.Genre, &idsJSON, &artistsJSON, &info.InAlbum, &info.TrackNumber, &info.IsrcCode,
+		&info.Genre, &idsJSON, &artistsJSON, &info.InAlbum, &info.DiscNumber, &info.TrackNumber, &info.IsrcCode,
 		&info.RecordingOf, &info.Checksum, &info.ChecksumAlgorithm,
 		&info.Created, &info.Updated,
 	)

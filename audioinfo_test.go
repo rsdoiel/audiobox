@@ -178,13 +178,21 @@ func TestGetAlbums(t *testing.T) {
 	col, cleanup := setupTestCollection(t)
 	defer cleanup()
 
-	for i, album := range []string{"Album A", "Album B", "Album A"} {
+	// Tracks in two different subdirectories → two album entries regardless of tag.
+	for i, subdir := range []string{"album-a", "album-b"} {
 		info := sampleInfo(fmt.Sprintf("alb%d", i))
-		info.InAlbum = album
-		info.ContentURL = filepath.Join(testMusicDir, fmt.Sprintf("alb%d.mp3", i))
+		info.InAlbum = subdir // tags match dir names for simplicity
+		info.ContentURL = filepath.Join(testMusicDir, subdir, "track.mp3")
 		if _, err := col.Create(info); err != nil {
 			t.Fatalf("Create: %v", err)
 		}
+	}
+	// Second track in album-a — still only one entry for that dir.
+	extra := sampleInfo("alb2")
+	extra.InAlbum = "album-a"
+	extra.ContentURL = filepath.Join(testMusicDir, "album-a", "track2.mp3")
+	if _, err := col.Create(extra); err != nil {
+		t.Fatalf("Create extra: %v", err)
 	}
 
 	albums, err := col.GetAlbums()
@@ -200,21 +208,23 @@ func TestGetAlbumEntriesSameNameDifferentDirs(t *testing.T) {
 	col, cleanup := setupTestCollection(t)
 	defer cleanup()
 
-	// Two releases of "801 Live" stored in separate subdirectories.
-	for i, subdir := range []string{"us", "uk"} {
+	// Simulate two "801 Live" releases: different dirs, different (or same) in_album tags.
+	// Directory names deslugify to distinct readable names.
+	dirs := []string{"801-Live", "801-Live-(American-Release)"}
+	for i, subdir := range dirs {
 		info := sampleInfo(fmt.Sprintf("live%d", i))
-		info.InAlbum = "801 Live"
+		info.InAlbum = "801 Live" // both have same (incomplete) tag
 		info.ContentURL = filepath.Join(testMusicDir, subdir, "track.mp3")
 		if _, err := col.Create(info); err != nil {
 			t.Fatalf("Create: %v", err)
 		}
 	}
-	// A third album with a unique name — should appear as one entry without qualifier.
-	third := sampleInfo("third")
-	third.InAlbum = "Solo Album"
-	third.ContentURL = filepath.Join(testMusicDir, "solo", "track.mp3")
-	if _, err := col.Create(third); err != nil {
-		t.Fatalf("Create: %v", err)
+	// A third album in its own dir.
+	solo := sampleInfo("third")
+	solo.InAlbum = "Solo Album"
+	solo.ContentURL = filepath.Join(testMusicDir, "Solo-Album", "track.mp3")
+	if _, err := col.Create(solo); err != nil {
+		t.Fatalf("Create solo: %v", err)
 	}
 
 	entries, err := col.GetAlbumEntries()
@@ -225,26 +235,14 @@ func TestGetAlbumEntriesSameNameDifferentDirs(t *testing.T) {
 		t.Errorf("len(entries) = %d, want 3 (2 '801 Live' releases + 1 unique)", len(entries))
 	}
 
-	// Both "801 Live" entries must have a directory qualifier in DisplayName.
-	var liveEntries []Album
+	// Verify deslugified names.
+	names := map[string]bool{}
 	for _, e := range entries {
-		if e.Name == "801 Live" {
-			liveEntries = append(liveEntries, e)
-		}
+		names[e.DisplayName] = true
 	}
-	if len(liveEntries) != 2 {
-		t.Fatalf("want 2 '801 Live' entries, got %d", len(liveEntries))
-	}
-	for _, e := range liveEntries {
-		if e.DisplayName == e.Name {
-			t.Errorf("duplicate album %q: DisplayName should include dir qualifier, got %q", e.Name, e.DisplayName)
-		}
-	}
-
-	// The unique album must have DisplayName == Name (no qualifier needed).
-	for _, e := range entries {
-		if e.Name == "Solo Album" && e.DisplayName != "Solo Album" {
-			t.Errorf("unique album DisplayName = %q, want %q", e.DisplayName, "Solo Album")
+	for _, want := range []string{"801 Live", "801 Live (American Release)", "Solo Album"} {
+		if !names[want] {
+			t.Errorf("missing expected album %q in entries", want)
 		}
 	}
 }
@@ -253,7 +251,7 @@ func TestGetTracksByAlbum(t *testing.T) {
 	col, cleanup := setupTestCollection(t)
 	defer cleanup()
 
-	for i, subdir := range []string{"us", "uk"} {
+	for i, subdir := range []string{"801-Live", "801-Live-(American-Release)"} {
 		info := sampleInfo(fmt.Sprintf("live%d", i))
 		info.InAlbum = "801 Live"
 		info.ContentURL = filepath.Join(testMusicDir, subdir, "track.mp3")
@@ -464,6 +462,48 @@ func TestParseQuery(t *testing.T) {
 				if got[i] != want {
 					t.Errorf("token[%d] = %+v, want %+v", i, got[i], want)
 				}
+			}
+		})
+	}
+}
+
+func TestParseDiscTrackFromFilename(t *testing.T) {
+	cases := []struct {
+		stem      string
+		wantDisc  int
+		wantTrack int
+	}{
+		// (Disc N) TT - Title
+		{"(Disc 2) 01 - Lagrima", 2, 1},
+		{"(Disc 2) 12 - Third Uncle", 2, 12},
+		// Disc-N-TT-Title (slugified)
+		{"Disc-1-01-Fleuve_Saint-Laurent", 1, 1},
+		{"Disc-2-06-The_Other_City", 2, 6},
+		// NN-TT- Title (disc-track hyphenated, 2-digit disc)
+		{"01-01- Future Legend (1999 Remastered Version)", 1, 1},
+		{"01-12- Whew", 1, 12},
+		// N-TT Title (single-digit disc, 2-digit track)
+		{"1-01 Pharaoh's Dance", 1, 1},
+		{"1-09 Africa", 1, 9},
+		// TT - Title (track only, disc=1)
+		{"01 - Lagrima", 1, 1},
+		{"12 - Lagrima - Reprise", 1, 12},
+		// TT Title (track only, no dash)
+		{"01 Lagrima", 1, 1},
+		{"10 Third Uncle", 1, 10},
+		// 00 prefix → unlisted, no position
+		{"00 Barbecutie", 0, 0},
+		// No numeric prefix → no match
+		{"Chapter-1-Dreams-of-Bali", 0, 0},
+		{"COOK01083_01", 0, 0},
+		{"esperanza spalding - Emily's D+Evolution - 01 Good Lava", 0, 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.stem, func(t *testing.T) {
+			d, tr := parseDiscTrackFromFilename(tc.stem)
+			if d != tc.wantDisc || tr != tc.wantTrack {
+				t.Errorf("parseDiscTrackFromFilename(%q) = (%d,%d), want (%d,%d)",
+					tc.stem, d, tr, tc.wantDisc, tc.wantTrack)
 			}
 		})
 	}

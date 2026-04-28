@@ -270,6 +270,7 @@ func initSchema(db *sql.DB) error {
 			identifiers         JSON,
 			by_artist           JSON,
 			in_album            TEXT,
+			disc_number         INTEGER NOT NULL DEFAULT 0,
 			track_number        INTEGER NOT NULL DEFAULT 0,
 			isrc_code           TEXT,
 			recording_of        TEXT,
@@ -295,12 +296,17 @@ func initSchema(db *sql.DB) error {
 			return fmt.Errorf("initialising schema: %w", err)
 		}
 	}
-	// Migration: add track_number to databases created before this column existed.
-	// SQLite ALTER TABLE ADD COLUMN fails with "duplicate column name" when already present;
-	// that error is ignored so this is safe to run on both old and new databases.
-	if _, err := db.Exec(`ALTER TABLE audio_files ADD COLUMN track_number INTEGER NOT NULL DEFAULT 0`); err != nil {
-		if !strings.Contains(err.Error(), "duplicate column name") {
-			return fmt.Errorf("migrating track_number column: %w", err)
+	// Incremental migrations: add columns introduced after the initial schema.
+	// ALTER TABLE ADD COLUMN fails with "duplicate column name" when already present;
+	// that error is intentionally ignored so opening an existing database is always safe.
+	for _, migration := range []string{
+		`ALTER TABLE audio_files ADD COLUMN track_number INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE audio_files ADD COLUMN disc_number  INTEGER NOT NULL DEFAULT 0`,
+	} {
+		if _, err := db.Exec(migration); err != nil {
+			if !strings.Contains(err.Error(), "duplicate column name") {
+				return fmt.Errorf("applying migration %q: %w", migration, err)
+			}
 		}
 	}
 	return nil
