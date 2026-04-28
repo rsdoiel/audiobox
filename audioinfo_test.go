@@ -196,6 +196,96 @@ func TestGetAlbums(t *testing.T) {
 	}
 }
 
+func TestGetAlbumEntriesSameNameDifferentDirs(t *testing.T) {
+	col, cleanup := setupTestCollection(t)
+	defer cleanup()
+
+	// Two releases of "801 Live" stored in separate subdirectories.
+	for i, subdir := range []string{"us", "uk"} {
+		info := sampleInfo(fmt.Sprintf("live%d", i))
+		info.InAlbum = "801 Live"
+		info.ContentURL = filepath.Join(testMusicDir, subdir, "track.mp3")
+		if _, err := col.Create(info); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+	}
+	// A third album with a unique name — should appear as one entry without qualifier.
+	third := sampleInfo("third")
+	third.InAlbum = "Solo Album"
+	third.ContentURL = filepath.Join(testMusicDir, "solo", "track.mp3")
+	if _, err := col.Create(third); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	entries, err := col.GetAlbumEntries()
+	if err != nil {
+		t.Fatalf("GetAlbumEntries: %v", err)
+	}
+	if len(entries) != 3 {
+		t.Errorf("len(entries) = %d, want 3 (2 '801 Live' releases + 1 unique)", len(entries))
+	}
+
+	// Both "801 Live" entries must have a directory qualifier in DisplayName.
+	var liveEntries []Album
+	for _, e := range entries {
+		if e.Name == "801 Live" {
+			liveEntries = append(liveEntries, e)
+		}
+	}
+	if len(liveEntries) != 2 {
+		t.Fatalf("want 2 '801 Live' entries, got %d", len(liveEntries))
+	}
+	for _, e := range liveEntries {
+		if e.DisplayName == e.Name {
+			t.Errorf("duplicate album %q: DisplayName should include dir qualifier, got %q", e.Name, e.DisplayName)
+		}
+	}
+
+	// The unique album must have DisplayName == Name (no qualifier needed).
+	for _, e := range entries {
+		if e.Name == "Solo Album" && e.DisplayName != "Solo Album" {
+			t.Errorf("unique album DisplayName = %q, want %q", e.DisplayName, "Solo Album")
+		}
+	}
+}
+
+func TestGetTracksByAlbum(t *testing.T) {
+	col, cleanup := setupTestCollection(t)
+	defer cleanup()
+
+	for i, subdir := range []string{"us", "uk"} {
+		info := sampleInfo(fmt.Sprintf("live%d", i))
+		info.InAlbum = "801 Live"
+		info.ContentURL = filepath.Join(testMusicDir, subdir, "track.mp3")
+		if _, err := col.Create(info); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+	}
+
+	entries, err := col.GetAlbumEntries()
+	if err != nil {
+		t.Fatalf("GetAlbumEntries: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("want 2 album entries, got %d", len(entries))
+	}
+
+	for _, entry := range entries {
+		tracks, err := col.GetTracksByAlbum(entry)
+		if err != nil {
+			t.Fatalf("GetTracksByAlbum(%q): %v", entry.DisplayName, err)
+		}
+		if len(tracks) != 1 {
+			t.Errorf("album %q: want 1 track, got %d", entry.DisplayName, len(tracks))
+		}
+		for _, tr := range tracks {
+			if !strings.HasPrefix(tr.ContentURL, entry.Dir) {
+				t.Errorf("track %q: ContentURL %q not under Dir %q", tr.Name, tr.ContentURL, entry.Dir)
+			}
+		}
+	}
+}
+
 func TestGetArtists(t *testing.T) {
 	col, cleanup := setupTestCollection(t)
 	defer cleanup()

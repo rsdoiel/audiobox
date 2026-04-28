@@ -104,6 +104,29 @@ type Identifier struct {
  */
 type Identifiers []Identifier
 
+/** Album represents a distinct album release in the collection.
+ * Two albums that share the same name but live in different directories
+ * (e.g. a US release and a UK release) are treated as separate entries.
+ *
+ * Parameters:
+ *   Name        (string) — the in_album metadata value stored on the tracks
+ *   DisplayName (string) — the label shown in lists; includes a folder qualifier
+ *                          when multiple releases share the same Name
+ *   Dir         (string) — absolute path to the directory containing the album's tracks
+ *
+ * Example:
+ *   alb := audioinfo.Album{
+ *     Name:        "801 Live",
+ *     DisplayName: "801 Live [801-Live-UK]",
+ *     Dir:         "/home/alice/Music/801/801-Live-UK",
+ *   }
+ */
+type Album struct {
+	Name        string `json:"name"`
+	DisplayName string `json:"displayName"`
+	Dir         string `json:"dir"`
+}
+
 /** Agent represents a schema.org Person or Organization with optional persistent identifiers.
  *
  * Parameters:

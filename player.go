@@ -48,21 +48,22 @@ type playerLayout struct {
 
 // playerState holds all mutable TUI state.
 type playerState struct {
-	view        viewMode
-	tab         tabMode
-	browseList  []string    // items shown in browse panel
-	browseIdx   int         // cursor position in browseList
-	browseOff   int         // scroll offset
-	results     []AudioInfo // tracks from last search
-	queue       []AudioInfo
-	queueIdx    int // index of the currently playing track
-	queueOff    int // scroll offset in queue
-	searchQuery string      // query being typed (viewSearchInput)
-	elapsed     time.Duration
-	total       time.Duration
-	paused      bool
-	volume      int    // 0–100
-	statusMsg   string // ephemeral one-shot message
+	view         viewMode
+	tab          tabMode
+	browseList   []string // items shown in browse panel
+	browseAlbums []Album  // parallel to browseList when tab == tabAlbums
+	browseIdx    int      // cursor position in browseList
+	browseOff    int      // scroll offset
+	results      []AudioInfo // tracks from last search
+	queue        []AudioInfo
+	queueIdx     int // index of the currently playing track
+	queueOff     int // scroll offset in queue
+	searchQuery  string // query being typed (viewSearchInput)
+	elapsed      time.Duration
+	total        time.Duration
+	paused       bool
+	volume       int    // 0–100
+	statusMsg    string // ephemeral one-shot message
 }
 
 /** RunPlayer opens a full-screen TUI audio player for the given collection.
@@ -106,7 +107,14 @@ func RunPlayer(coll *Collection) error {
 		tab:    tabAlbums,
 		volume: engine.Volume(),
 	}
-	state.browseList, _ = coll.GetAlbums()
+	if albums, err := coll.GetAlbumEntries(); err == nil {
+		state.browseAlbums = albums
+		names := make([]string, len(albums))
+		for i, a := range albums {
+			names[i] = a.DisplayName
+		}
+		state.browseList = names
+	}
 
 	lay := computeLayout(term)
 	drawAll(term, lay, state, coll.Config().Name)
@@ -134,7 +142,9 @@ func RunPlayer(coll *Collection) error {
 			state.elapsed, state.total = engine.Position()
 			state.paused = engine.IsPaused()
 			state.volume = engine.Volume()
+			term.HideCursor()
 			drawNowPlaying(term, lay, state)
+			term.ShowCursor()
 			term.Refresh()
 		}
 	}
@@ -275,6 +285,7 @@ func computeLayout(term *termlib.Terminal) playerLayout {
 
 // drawAll redraws every section of the screen.
 func drawAll(term *termlib.Terminal, lay playerLayout, state *playerState, collName string) {
+	term.HideCursor()
 	drawTabBar(term, lay, state, collName)
 	drawBrowseList(term, lay, state)
 	drawSeparator(term, lay.sep1, lay.width)
@@ -282,6 +293,7 @@ func drawAll(term *termlib.Terminal, lay playerLayout, state *playerState, collN
 	drawSeparator(term, lay.sep2, lay.width)
 	drawQueue(term, lay, state)
 	drawHints(term, lay, state)
+	term.ShowCursor()
 	term.Refresh()
 }
 
@@ -487,8 +499,8 @@ func playSelected(state *playerState, engine *AudioEngine, coll *Collection) {
 		}
 		return
 	}
-	results, err := coll.SearchAudioFiles(browseQuery(state))
-	if err != nil || len(results) == 0 {
+	results := albumTracksOrSearch(state, coll)
+	if len(results) == 0 {
 		return
 	}
 	state.queue = results
@@ -506,11 +518,27 @@ func appendSelected(state *playerState, coll *Collection) {
 		state.queue = append(state.queue, state.results[state.browseIdx])
 		return
 	}
+	results := albumTracksOrSearch(state, coll)
+	state.queue = append(state.queue, results...)
+}
+
+// albumTracksOrSearch fetches tracks for the highlighted browse item.
+// For the Albums tab it uses GetTracksByAlbum (directory-scoped) so that
+// same-named releases in different folders stay independent.
+// For other tabs it falls back to SearchAudioFiles.
+func albumTracksOrSearch(state *playerState, coll *Collection) []AudioInfo {
+	if state.tab == tabAlbums && state.browseIdx < len(state.browseAlbums) {
+		tracks, err := coll.GetTracksByAlbum(state.browseAlbums[state.browseIdx])
+		if err != nil {
+			return nil
+		}
+		return tracks
+	}
 	results, err := coll.SearchAudioFiles(browseQuery(state))
 	if err != nil {
-		return
+		return nil
 	}
-	state.queue = append(state.queue, results...)
+	return results
 }
 
 // browseQuery builds a search query for the currently highlighted browse item.
@@ -542,10 +570,20 @@ func cycleBrowseTab(state *playerState, coll *Collection) {
 func reloadBrowseTab(state *playerState, coll *Collection) {
 	switch state.tab {
 	case tabAlbums:
-		state.browseList, _ = coll.GetAlbums()
+		state.browseAlbums = nil
+		if albums, err := coll.GetAlbumEntries(); err == nil {
+			state.browseAlbums = albums
+			names := make([]string, len(albums))
+			for i, a := range albums {
+				names[i] = a.DisplayName
+			}
+			state.browseList = names
+		}
 	case tabArtists:
+		state.browseAlbums = nil
 		state.browseList, _ = coll.GetArtists()
 	case tabTitles:
+		state.browseAlbums = nil
 		state.browseList, _ = coll.GetTitles()
 	}
 }

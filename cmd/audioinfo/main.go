@@ -451,11 +451,49 @@ func handleList(col *audioinfo.Collection, args []string, format OutputFormat) {
 		category = strings.ToLower(args[0])
 	}
 
+	label := strings.ToUpper(category[:1]) + category[1:]
+
+	if category == "albums" {
+		albums, err := col.GetAlbumEntries()
+		if err != nil {
+			log.Fatalf("error listing albums: %v", err)
+		}
+		switch format {
+		case FormatText:
+			fmt.Printf("%s:\n", label)
+			for _, a := range albums {
+				fmt.Println(" ", a.DisplayName)
+			}
+		case FormatJSON:
+			data, _ := json.MarshalIndent(map[string]interface{}{"albums": albums}, "", "  ")
+			fmt.Println(string(data))
+		case FormatYAML:
+			data, _ := yaml.Marshal(map[string]interface{}{"albums": albums})
+			fmt.Print(string(data))
+		case FormatXML:
+			type xmlAlbum struct {
+				XMLName     xml.Name `xml:"album"`
+				Name        string   `xml:"name"`
+				DisplayName string   `xml:"displayName"`
+				Dir         string   `xml:"dir"`
+			}
+			type List struct {
+				XMLName xml.Name   `xml:"list"`
+				Items   []xmlAlbum `xml:"album"`
+			}
+			xmlItems := make([]xmlAlbum, len(albums))
+			for i, a := range albums {
+				xmlItems[i] = xmlAlbum{Name: a.Name, DisplayName: a.DisplayName, Dir: a.Dir}
+			}
+			data, _ := xml.MarshalIndent(List{Items: xmlItems}, "", "  ")
+			fmt.Println(xml.Header + string(data))
+		}
+		return
+	}
+
 	var items []string
 	var err error
 	switch category {
-	case "albums":
-		items, err = col.GetAlbums()
 	case "artists":
 		items, err = col.GetArtists()
 	case "titles":
@@ -468,7 +506,6 @@ func handleList(col *audioinfo.Collection, args []string, format OutputFormat) {
 		log.Fatalf("error listing %s: %v", category, err)
 	}
 
-	label := strings.ToUpper(category[:1]) + category[1:]
 	switch format {
 	case FormatText:
 		fmt.Printf("%s:\n", label)

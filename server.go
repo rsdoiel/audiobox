@@ -106,7 +106,7 @@ func writeJSONError(w http.ResponseWriter, code int, msg string) {
 
 func (c *Collection) handleListAlbums(logger *log.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		items, err := c.GetAlbums()
+		items, err := c.GetAlbumEntries()
 		if err != nil {
 			logger.Printf("list albums: %v", err)
 			writeJSONError(w, http.StatusInternalServerError, err.Error())

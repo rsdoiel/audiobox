@@ -253,6 +253,7 @@ func openDB(dbPath string) (*sql.DB, error) {
 
 // initSchema creates the audio_files table and FTS5 search_index if they do not already exist.
 // It is safe to call on an existing database (all statements use IF NOT EXISTS).
+// It also applies incremental column migrations for older databases.
 func initSchema(db *sql.DB) error {
 	stmts := []string{
 		`CREATE TABLE IF NOT EXISTS audio_files (
@@ -269,6 +270,7 @@ func initSchema(db *sql.DB) error {
 			identifiers         JSON,
 			by_artist           JSON,
 			in_album            TEXT,
+			track_number        INTEGER NOT NULL DEFAULT 0,
 			isrc_code           TEXT,
 			recording_of        TEXT,
 			checksum            TEXT,
@@ -291,6 +293,14 @@ func initSchema(db *sql.DB) error {
 	for _, s := range stmts {
 		if _, err := db.Exec(s); err != nil {
 			return fmt.Errorf("initialising schema: %w", err)
+		}
+	}
+	// Migration: add track_number to databases created before this column existed.
+	// SQLite ALTER TABLE ADD COLUMN fails with "duplicate column name" when already present;
+	// that error is ignored so this is safe to run on both old and new databases.
+	if _, err := db.Exec(`ALTER TABLE audio_files ADD COLUMN track_number INTEGER NOT NULL DEFAULT 0`); err != nil {
+		if !strings.Contains(err.Error(), "duplicate column name") {
+			return fmt.Errorf("migrating track_number column: %w", err)
 		}
 	}
 	return nil

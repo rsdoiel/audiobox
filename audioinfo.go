@@ -40,6 +40,7 @@ import (
  *   Identifiers        (Identifiers) — schema:identifier list (DOI, ISRC, ARK, etc.)
  *   ByArtist           ([]Agent)    — schema:byArtist — performers (Person or Organization)
  *   InAlbum            (string)     — schema:inAlbum
+ *   TrackNumber        (int)        — track position within the album (0 = unknown)
  *   IsrcCode           (string)     — schema:isrcCode
  *   RecordingOf        (string)     — schema:recordingOf — composition title if different from Name
  *   Checksum           (string)     — hex-encoded SHA-256 of the file at ingest
@@ -69,6 +70,7 @@ type AudioInfo struct {
 	Identifiers       Identifiers
 	ByArtist          []Agent
 	InAlbum           string
+	TrackNumber       int
 	IsrcCode          string
 	RecordingOf       string
 	Checksum          string
@@ -212,16 +214,13 @@ func (c *Collection) ProcessAudioFile(filePath string, logger *log.Logger) error
 		trackNum, _ := meta.Track()
 		info.Name = meta.Title()
 		info.InAlbum = meta.Album()
+		info.TrackNumber = trackNum
 		info.Genre = meta.Genre()
 		if meta.Year() != 0 {
 			info.DatePublished = fmt.Sprintf("%d", meta.Year())
 		}
 		info.ByArtist = []Agent{{Type: "Person", Name: meta.Artist()}}
 		info.Identifiers = Identifiers{}
-		if meta.Comment() != "" {
-			info.Description = meta.Comment()
-		}
-		_ = trackNum
 	}
 
 	var existingID string
@@ -598,7 +597,7 @@ func (c *Collection) fuzzySearch(tokens []queryToken) ([]AudioInfo, error) {
 	rows, err := c.db.Query(`
 		SELECT id, schema_type, name, description, content_url, encoding_format,
 		       duration, date_published, in_language, genre, identifiers, by_artist,
-		       in_album, isrc_code, recording_of, checksum, checksum_algorithm,
+		       in_album, track_number, isrc_code, recording_of, checksum, checksum_algorithm,
 		       created, updated
 		FROM audio_files`)
 	if err != nil {
@@ -669,7 +668,7 @@ func (c *Collection) regexSearch(tokens []queryToken) ([]AudioInfo, error) {
 	rows, err := c.db.Query(`
 		SELECT id, schema_type, name, description, content_url, encoding_format,
 		       duration, date_published, in_language, genre, identifiers, by_artist,
-		       in_album, isrc_code, recording_of, checksum, checksum_algorithm,
+		       in_album, track_number, isrc_code, recording_of, checksum, checksum_algorithm,
 		       created, updated
 		FROM audio_files`)
 	if err != nil {
@@ -751,12 +750,12 @@ func (c *Collection) Create(info AudioInfo) (string, error) {
 		INSERT INTO audio_files (
 			id, schema_type, name, description, content_url, encoding_format,
 			duration, date_published, in_language, genre, identifiers, by_artist,
-			in_album, isrc_code, recording_of, checksum, checksum_algorithm,
+			in_album, track_number, isrc_code, recording_of, checksum, checksum_algorithm,
 			created, updated
-		) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		info.ID, info.SchemaType, info.Name, info.Description, info.ContentURL,
 		info.EncodingFormat, info.Duration, info.DatePublished, info.InLanguage,
-		info.Genre, idsJSON, artistsJSON, info.InAlbum, info.IsrcCode,
+		info.Genre, idsJSON, artistsJSON, info.InAlbum, info.TrackNumber, info.IsrcCode,
 		info.RecordingOf, info.Checksum, info.ChecksumAlgorithm,
 		info.Created, info.Updated,
 	)
@@ -796,12 +795,12 @@ func (c *Collection) Read(id string) (AudioInfo, error) {
 	err := c.db.QueryRow(`
 		SELECT id, schema_type, name, description, content_url, encoding_format,
 		       duration, date_published, in_language, genre, identifiers, by_artist,
-		       in_album, isrc_code, recording_of, checksum, checksum_algorithm,
+		       in_album, track_number, isrc_code, recording_of, checksum, checksum_algorithm,
 		       created, updated
 		FROM audio_files WHERE id = ?`, id).Scan(
 		&info.ID, &info.SchemaType, &info.Name, &info.Description, &info.ContentURL,
 		&info.EncodingFormat, &info.Duration, &info.DatePublished, &info.InLanguage,
-		&info.Genre, &idsJSON, &artistsJSON, &info.InAlbum, &info.IsrcCode,
+		&info.Genre, &idsJSON, &artistsJSON, &info.InAlbum, &info.TrackNumber, &info.IsrcCode,
 		&info.RecordingOf, &info.Checksum, &info.ChecksumAlgorithm,
 		&info.Created, &info.Updated,
 	)
@@ -850,12 +849,12 @@ func (c *Collection) Update(id string, info AudioInfo) error {
 		UPDATE audio_files SET
 			schema_type=?, name=?, description=?, content_url=?, encoding_format=?,
 			duration=?, date_published=?, in_language=?, genre=?, identifiers=?,
-			by_artist=?, in_album=?, isrc_code=?, recording_of=?,
+			by_artist=?, in_album=?, track_number=?, isrc_code=?, recording_of=?,
 			checksum=?, checksum_algorithm=?, updated=?
 		WHERE id=?`,
 		info.SchemaType, info.Name, info.Description, info.ContentURL, info.EncodingFormat,
 		info.Duration, info.DatePublished, info.InLanguage, info.Genre,
-		idsJSON, artistsJSON, info.InAlbum, info.IsrcCode, info.RecordingOf,
+		idsJSON, artistsJSON, info.InAlbum, info.TrackNumber, info.IsrcCode, info.RecordingOf,
 		info.Checksum, info.ChecksumAlgorithm, info.Updated, id,
 	)
 	if err != nil {
@@ -900,17 +899,154 @@ func (c *Collection) Delete(id string) error {
 	return nil
 }
 
-/** GetAlbums returns a sorted, deduplicated list of album names in the collection.
+/** GetAlbumEntries returns a sorted list of distinct album releases in the collection.
+ * Albums are identified by the combination of their name and the directory that holds
+ * their tracks. Two releases with the same in_album tag but stored in different folders
+ * (e.g. a US pressing and a UK pressing) appear as separate Album entries.
+ * When names collide across directories, DisplayName includes the directory basename
+ * as a qualifier so the caller can distinguish them.
  *
  * Returns:
- *   []string — album names in ascending alphabetical order
+ *   []Album — sorted by DisplayName
+ *   error   — non-nil on database failure
+ *
+ * Example:
+ *   albums, err := col.GetAlbumEntries()
+ *   for _, a := range albums {
+ *     fmt.Println(a.DisplayName) // e.g. "801 Live [801-Live-UK]"
+ *   }
+ */
+func (c *Collection) GetAlbumEntries() ([]Album, error) {
+	if !c.isOpen {
+		return nil, fmt.Errorf("collection is not open")
+	}
+	rows, err := c.db.Query(`
+		SELECT DISTINCT in_album, content_url
+		FROM audio_files
+		WHERE in_album != '' AND in_album IS NOT NULL
+		ORDER BY in_album`)
+	if err != nil {
+		return nil, fmt.Errorf("querying album entries: %w", err)
+	}
+	defer rows.Close()
+
+	type entry struct{ name, dir string }
+	// name → set of dirs that contain at least one track with that album name
+	nameDirs := make(map[string]map[string]struct{})
+	for rows.Next() {
+		var name, contentURL string
+		if err := rows.Scan(&name, &contentURL); err != nil {
+			return nil, fmt.Errorf("scanning album entry: %w", err)
+		}
+		dir := filepath.Dir(contentURL)
+		if nameDirs[name] == nil {
+			nameDirs[name] = make(map[string]struct{})
+		}
+		nameDirs[name][dir] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating album entries: %w", err)
+	}
+
+	var albums []Album
+	for name, dirs := range nameDirs {
+		qualify := len(dirs) > 1
+		for dir := range dirs {
+			displayName := name
+			if qualify {
+				displayName = name + " [" + filepath.Base(dir) + "]"
+			}
+			albums = append(albums, Album{Name: name, DisplayName: displayName, Dir: dir})
+		}
+	}
+	sort.Slice(albums, func(i, j int) bool {
+		return albums[i].DisplayName < albums[j].DisplayName
+	})
+	return albums, nil
+}
+
+// escapeLIKE escapes the SQLite LIKE special characters (\, %, _) in s
+// so the result can safely be used as a literal prefix in a LIKE pattern.
+func escapeLIKE(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `%`, `\%`)
+	s = strings.ReplaceAll(s, `_`, `\_`)
+	return s
+}
+
+/** GetTracksByAlbum returns all audio tracks that belong to the given album release.
+ * It matches on both the album name (in_album) and the release directory so that
+ * same-named albums in different folders remain independent.
+ *
+ * Parameters:
+ *   album (Album) — an entry obtained from GetAlbumEntries
+ *
+ * Returns:
+ *   []AudioInfo — matching tracks, sorted by name; empty slice when none found
+ *   error       — non-nil on database failure
+ *
+ * Example:
+ *   albums, _ := col.GetAlbumEntries()
+ *   tracks, err := col.GetTracksByAlbum(albums[0])
+ */
+func (c *Collection) GetTracksByAlbum(album Album) ([]AudioInfo, error) {
+	if !c.isOpen {
+		return nil, fmt.Errorf("collection is not open")
+	}
+	pattern := escapeLIKE(album.Dir) + string(filepath.Separator) + "%"
+	rows, err := c.db.Query(`
+		SELECT id, schema_type, name, description, content_url, encoding_format,
+		       duration, date_published, in_language, genre, identifiers, by_artist,
+		       in_album, track_number, isrc_code, recording_of, checksum, checksum_algorithm,
+		       created, updated
+		FROM audio_files
+		WHERE in_album = ? AND content_url LIKE ? ESCAPE '\'
+		ORDER BY track_number, name`,
+		album.Name, pattern)
+	if err != nil {
+		return nil, fmt.Errorf("querying tracks for album %q in %q: %w", album.Name, album.Dir, err)
+	}
+	defer rows.Close()
+
+	var results []AudioInfo
+	for rows.Next() {
+		info, err := scanAudioInfo(rows)
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, info)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating tracks for album %q: %w", album.Name, err)
+	}
+	if results == nil {
+		results = []AudioInfo{}
+	}
+	return results, nil
+}
+
+/** GetAlbums returns a sorted, deduplicated list of album display names in the collection.
+ * Albums sharing the same name but stored in different directories appear as separate
+ * entries with a folder qualifier appended (e.g. "801 Live [801-Live-UK]").
+ * Prefer GetAlbumEntries when you need structured album data.
+ *
+ * Returns:
+ *   []string — album display names in ascending order
  *   error    — non-nil on database failure
  *
  * Example:
  *   albums, err := col.GetAlbums()
  */
 func (c *Collection) GetAlbums() ([]string, error) {
-	return c.queryDistinctColumn("in_album")
+	entries, err := c.GetAlbumEntries()
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, len(entries))
+	for i, a := range entries {
+		names[i] = a.DisplayName
+	}
+	return names, nil
 }
 
 /** GetArtists returns a sorted, deduplicated list of artist names in the collection.
@@ -1052,7 +1188,7 @@ func (c *Collection) SearchAudioFiles(query string) ([]AudioInfo, error) {
 	rows, err := c.db.Query(`
 		SELECT a.id, a.schema_type, a.name, a.description, a.content_url, a.encoding_format,
 		       a.duration, a.date_published, a.in_language, a.genre, a.identifiers, a.by_artist,
-		       a.in_album, a.isrc_code, a.recording_of, a.checksum, a.checksum_algorithm,
+		       a.in_album, a.track_number, a.isrc_code, a.recording_of, a.checksum, a.checksum_algorithm,
 		       a.created, a.updated
 		FROM search_index
 		JOIN audio_files a ON search_index.audio_id = a.id
@@ -1091,7 +1227,7 @@ func scanAudioInfo(rows *sql.Rows) (AudioInfo, error) {
 	err := rows.Scan(
 		&info.ID, &info.SchemaType, &info.Name, &info.Description, &info.ContentURL,
 		&info.EncodingFormat, &info.Duration, &info.DatePublished, &info.InLanguage,
-		&info.Genre, &idsJSON, &artistsJSON, &info.InAlbum, &info.IsrcCode,
+		&info.Genre, &idsJSON, &artistsJSON, &info.InAlbum, &info.TrackNumber, &info.IsrcCode,
 		&info.RecordingOf, &info.Checksum, &info.ChecksumAlgorithm,
 		&info.Created, &info.Updated,
 	)
