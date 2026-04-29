@@ -26,8 +26,7 @@ About this software
 ## audiobox 0.0.1
 
 - You can listen to music with audiobox via TUI.
-- Implemeneted new actions, player provides a TUI play
-- Started implementing Web UI and service
+- Implemeneted new actions, player provides a TUI play, server provides a Web UI
 
 ### Authors
 

@@ -18,9 +18,9 @@
 </ul>
 </nav>
 <section>
-<h1 id="installation-for-development-of-audioinfo">Installation for
-development of <strong>audioinfo</strong></h1>
-<p><strong>audioinfo</strong> audioinfo is a go module that for managing
+<h1 id="installation-for-development-of-audiobox">Installation for
+development of <strong>audiobox</strong></h1>
+<p><strong>audiobox</strong> audiobox is a go module that for managing
 audio metadata in an SQLite3 database. It uses
 “https://github.com/dhowden/tag” module to extract metadata that may be
 found in the audio file itself.</p>
@@ -30,13 +30,13 @@ irm</h2>
 following command to install latest table release. This may work for
 macOS, Linux and if you’re using Windows with the Unix subsystem. This
 would be run from your shell (e.g. Terminal on macOS).</p>
-<pre class="shell"><code>curl https://Laboratory.github.io/audioinfo/installer.sh | sh</code></pre>
-<p>This will install the programs included in audioinfo in your
+<pre class="shell"><code>curl https://Laboratory.github.io/audiobox/installer.sh | sh</code></pre>
+<p>This will install the programs included in audiobox in your
 <code>$HOME/bin</code> directory.</p>
 <p>If you are running Windows 10 or 11 use the Powershell command
 below.</p>
 <div class="sourceCode" id="cb2"><pre
-class="sourceCode ps1"><code class="sourceCode powershell"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">irm</span> https<span class="op">://</span>Laboratory<span class="op">.</span><span class="fu">github</span><span class="op">.</span><span class="fu">io</span><span class="op">/</span>audioinfo<span class="op">/</span>installer<span class="op">.</span><span class="fu">ps1</span> <span class="op">|</span> <span class="fu">iex</span></span></code></pre></div>
+class="sourceCode ps1"><code class="sourceCode powershell"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">irm</span> https<span class="op">://</span>Laboratory<span class="op">.</span><span class="fu">github</span><span class="op">.</span><span class="fu">io</span><span class="op">/</span>audiobox<span class="op">/</span>installer<span class="op">.</span><span class="fu">ps1</span> <span class="op">|</span> <span class="fu">iex</span></span></code></pre></div>
 <h3 id="if-your-are-running-macos-or-windows">If your are running macOS
 or Windows</h3>
 <p>You may get security warnings if you are using macOS or Windows. See
@@ -54,12 +54,12 @@ href="INSTALL_NOTES_Windows.html">INSTALL_NOTES_Windows.md</a></li>
 </ul>
 <h3 id="steps">Steps</h3>
 <ol type="1">
-<li>git clone https://github.com/Laboratory/audioinfo</li>
-<li>Change directory into the <code>audioinfo</code> directory</li>
+<li>git clone https://github.com/Laboratory/audiobox</li>
+<li>Change directory into the <code>audiobox</code> directory</li>
 <li>Make to build, test and install</li>
 </ol>
-<pre class="shell"><code>git clone https://github.com/Laboratory/audioinfo
-cd audioinfo
+<pre class="shell"><code>git clone https://github.com/Laboratory/audiobox
+cd audiobox
 make
 make test
 make install</code></pre>
