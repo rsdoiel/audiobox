@@ -11,7 +11,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/rsdoiel/audioinfo"
+	"github.com/rsdoiel/audiobox"
 	"github.com/rsdoiel/termlib"
 )
 
@@ -87,7 +87,7 @@ EXAMPLES
 
 SEE ALSO
 
-  {app_name}(1) man page, https://github.com/rsdoiel/audioinfo
+  {app_name}(1) man page, https://github.com/rsdoiel/audiobox
 `
 
 const helpInit = `
@@ -303,21 +303,21 @@ func main() {
 	appName := os.Args[0]
 
 	if *showHelp {
-		fmt.Println(audioinfo.FmtHelp(helpGeneral, appName, audioinfo.Version, audioinfo.ReleaseDate, audioinfo.ReleaseHash))
+		fmt.Println(audiobox.FmtHelp(helpGeneral, appName, audiobox.Version, audiobox.ReleaseDate, audiobox.ReleaseHash))
 		os.Exit(0)
 	}
 	if *showLicense {
-		fmt.Print(audioinfo.LicenseText)
+		fmt.Print(audiobox.LicenseText)
 		os.Exit(0)
 	}
 	if *showVersion {
-		fmt.Println(audioinfo.FmtHelp("{app_name} {version} (released {release_date}, commit {release_hash})",
-			appName, audioinfo.Version, audioinfo.ReleaseDate, audioinfo.ReleaseHash))
+		fmt.Println(audiobox.FmtHelp("{app_name} {version} (released {release_date}, commit {release_hash})",
+			appName, audiobox.Version, audiobox.ReleaseDate, audiobox.ReleaseHash))
 		os.Exit(0)
 	}
 
 	if flag.NArg() < 1 {
-		fmt.Println(audioinfo.FmtHelp(helpGeneral, appName, audioinfo.Version, audioinfo.ReleaseDate, audioinfo.ReleaseHash))
+		fmt.Println(audiobox.FmtHelp(helpGeneral, appName, audiobox.Version, audiobox.ReleaseDate, audiobox.ReleaseHash))
 		os.Exit(0)
 	}
 
@@ -335,7 +335,7 @@ func main() {
 			fmt.Fprintf(os.Stderr, "error: %s requires a COLLECTION.yaml argument\n", action)
 			os.Exit(1)
 		}
-		col, err := audioinfo.LoadCollection(args[0])
+		col, err := audiobox.LoadCollection(args[0])
 		if err != nil {
 			log.Fatalf("error opening collection: %v", err)
 		}
@@ -359,7 +359,7 @@ func main() {
 		}
 	default:
 		fmt.Fprintf(os.Stderr, "unknown action %q\n", action)
-		fmt.Println(audioinfo.FmtHelp(helpGeneral, appName, audioinfo.Version, audioinfo.ReleaseDate, audioinfo.ReleaseHash))
+		fmt.Println(audiobox.FmtHelp(helpGeneral, appName, audiobox.Version, audiobox.ReleaseDate, audiobox.ReleaseHash))
 		os.Exit(1)
 	}
 }
@@ -370,7 +370,7 @@ func main() {
 
 func handleHelp(appName string, args []string) {
 	if len(args) == 0 {
-		fmt.Println(audioinfo.FmtHelp(helpGeneral, appName, audioinfo.Version, audioinfo.ReleaseDate, audioinfo.ReleaseHash))
+		fmt.Println(audiobox.FmtHelp(helpGeneral, appName, audiobox.Version, audiobox.ReleaseDate, audiobox.ReleaseHash))
 		return
 	}
 	topic := strings.ToLower(args[0])
@@ -379,7 +379,7 @@ func handleHelp(appName string, args []string) {
 		fmt.Fprintf(os.Stderr, "no help available for %q\n", topic)
 		os.Exit(1)
 	}
-	fmt.Println(audioinfo.FmtHelp(text, appName, audioinfo.Version, audioinfo.ReleaseDate, audioinfo.ReleaseHash))
+	fmt.Println(audiobox.FmtHelp(text, appName, audiobox.Version, audiobox.ReleaseDate, audiobox.ReleaseHash))
 }
 
 func handleInit(args []string) {
@@ -426,7 +426,7 @@ func handleInit(args []string) {
 		os.Exit(1)
 	}
 
-	col, err := audioinfo.NewCollection(name, audioDir, description)
+	col, err := audiobox.NewCollection(name, audioDir, description)
 	if err != nil {
 		log.Fatalf("error initialising collection: %v", err)
 	}
@@ -437,7 +437,7 @@ func handleInit(args []string) {
 		cfg.Name, name, cfg.Database, cfg.AudioDir)
 }
 
-func handleScan(col *audioinfo.Collection) {
+func handleScan(col *audiobox.Collection) {
 	fmt.Print("Scanning…\n")
 	if err := col.ScanDirectories(); err != nil {
 		log.Fatalf("scan failed: %v", err)
@@ -445,7 +445,7 @@ func handleScan(col *audioinfo.Collection) {
 	fmt.Print("Scan complete.\n")
 }
 
-func handleList(col *audioinfo.Collection, args []string, format OutputFormat) {
+func handleList(col *audiobox.Collection, args []string, format OutputFormat) {
 	category := "albums"
 	if len(args) > 0 {
 		category = strings.ToLower(args[0])
@@ -528,7 +528,7 @@ func handleList(col *audioinfo.Collection, args []string, format OutputFormat) {
 	}
 }
 
-func handleSearch(col *audioinfo.Collection, args []string, format OutputFormat) {
+func handleSearch(col *audiobox.Collection, args []string, format OutputFormat) {
 	if len(args) < 1 {
 		fmt.Fprintln(os.Stderr, "error: search requires a QUERY argument")
 		os.Exit(1)
@@ -545,7 +545,7 @@ func handleSearch(col *audioinfo.Collection, args []string, format OutputFormat)
 	printAudioInfoList(results, format)
 }
 
-func handleShow(col *audioinfo.Collection, args []string, format OutputFormat) {
+func handleShow(col *audiobox.Collection, args []string, format OutputFormat) {
 	if len(args) < 1 {
 		fmt.Fprintln(os.Stderr, "error: show requires an ID argument")
 		os.Exit(1)
@@ -554,17 +554,17 @@ func handleShow(col *audioinfo.Collection, args []string, format OutputFormat) {
 	if err != nil {
 		log.Fatalf("error reading record: %v", err)
 	}
-	printAudioInfoList([]audioinfo.AudioInfo{info}, format)
+	printAudioInfoList([]audiobox.AudioInfo{info}, format)
 }
 
-func handleServer(col *audioinfo.Collection) {
+func handleServer(col *audiobox.Collection) {
 	logger := log.New(os.Stderr, "", log.LstdFlags)
 	if err := col.Serve(logger); err != nil {
 		log.Fatalf("server error: %v", err)
 	}
 }
 
-func handleDelete(col *audioinfo.Collection, args []string) {
+func handleDelete(col *audiobox.Collection, args []string) {
 	if len(args) < 1 {
 		fmt.Fprintln(os.Stderr, "error: delete requires an ID argument")
 		os.Exit(1)
@@ -575,8 +575,8 @@ func handleDelete(col *audioinfo.Collection, args []string) {
 	fmt.Printf("Deleted %s\n", args[0])
 }
 
-func handlePlayer(col *audioinfo.Collection) {
-	if err := audioinfo.RunPlayer(col); err != nil {
+func handlePlayer(col *audiobox.Collection) {
+	if err := audiobox.RunPlayer(col); err != nil {
 		log.Fatalf("player error: %v", err)
 	}
 }
@@ -618,7 +618,7 @@ type xmlAudioInfo struct {
 	Algorithm      string   `xml:"checksumAlgorithm"`
 }
 
-func toXMLInfo(a audioinfo.AudioInfo) xmlAudioInfo {
+func toXMLInfo(a audiobox.AudioInfo) xmlAudioInfo {
 	return xmlAudioInfo{
 		ID: a.ID, SchemaType: a.SchemaType, Name: a.Name,
 		Description: a.Description, ContentURL: a.ContentURL,
@@ -630,7 +630,7 @@ func toXMLInfo(a audioinfo.AudioInfo) xmlAudioInfo {
 	}
 }
 
-func printAudioInfoList(items []audioinfo.AudioInfo, format OutputFormat) {
+func printAudioInfoList(items []audiobox.AudioInfo, format OutputFormat) {
 	switch format {
 	case FormatText:
 		for _, a := range items {

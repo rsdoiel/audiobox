@@ -1,6 +1,6 @@
 // audio.go — beep-based audio engine for the TUI player.
 // Copyright (C) 2025 R. S. Doiel
-package audioinfo
+package audiobox
 
 import (
 	"bytes"
@@ -29,7 +29,7 @@ const audioSampleRate = beep.SampleRate(44100)
  * and AAC are transcoded through ffmpeg (if available) before playback.
  *
  * Example:
- *   engine, err := audioinfo.NewAudioEngine()
+ *   engine, err := audiobox.NewAudioEngine()
  *   if err != nil { log.Fatal(err) }
  *   defer engine.Close()
  *
@@ -54,7 +54,7 @@ type AudioEngine struct {
  *   error        — non-nil if the audio device cannot be opened.
  *
  * Example:
- *   engine, err := audioinfo.NewAudioEngine()
+ *   engine, err := audiobox.NewAudioEngine()
  */
 func NewAudioEngine() (*AudioEngine, error) {
 	bufSize := audioSampleRate.N(time.Second / 10)

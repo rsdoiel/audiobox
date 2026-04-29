@@ -1,5 +1,5 @@
-import type { Agent, AudioInfo } from "./audioinfo_api.ts";
-import { AudioInfoAPI } from "./audioinfo_api.ts";
+import type { Agent, AudioInfo } from "./audiobox_api.ts";
+import { AudioInfoAPI } from "./audiobox_api.ts";
 
 // ---------------------------------------------------------------------------
 // Pure utility functions — exported for testing without a DOM environment
@@ -211,13 +211,13 @@ function getBaseClass(): typeof HTMLElement {
 }
 const _Base = getBaseClass();
 
-/** AudioInfoPlayer is a self-contained web component for browsing and playing an audioinfo collection.
+/** AudioInfoPlayer is a self-contained web component for browsing and playing an audiobox collection.
  *
  * Attributes:
- *   api-url (string) — base URL of the audioinfo server; defaults to "" (same-origin)
+ *   api-url (string) — base URL of the audiobox server; defaults to "" (same-origin)
  *
  * Usage:
- *   &lt;audioinfo-player api-url="http://localhost:8010"&gt;&lt;/audioinfo-player&gt;
+ *   &lt;audiobox-player api-url="http://localhost:8010"&gt;&lt;/audiobox-player&gt;
  *
  * The component renders a browse panel (Titles / Albums / Artists tabs and a search box),
  * a now-playing panel that activates when a track is selected, and a collapsible queue panel.
@@ -517,5 +517,5 @@ export class AudioInfoPlayer extends _Base {
 
 // Register the element only in browser environments.
 if (typeof customElements !== "undefined") {
-  customElements.define("audioinfo-player", AudioInfoPlayer);
+  customElements.define("audiobox-player", AudioInfoPlayer);
 }

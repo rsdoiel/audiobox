@@ -7,7 +7,7 @@ import {
   formatArtists,
   formatDuration,
   PLAYER_TEMPLATE,
-} from "./audioinfo_player.ts";
+} from "./audiobox_player.ts";
 
 // ---------------------------------------------------------------------------
 // formatArtists

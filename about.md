@@ -1,6 +1,6 @@
 ---
-title: audioinfo
-abstract: "audioinfo is a go module that for managing audio metadata in an SQLite3 database. It uses &quot;https://github.com/dhowden/tag&quot; module to extract metadata that may be found in the audio file itself."
+title: audiobox
+abstract: "audiobox is a go module that for managing audio metadata in an SQLite3 database. It uses &quot;https://github.com/dhowden/tag&quot; module to extract metadata that may be found in the audio file itself."
 authors:
   - family_name: Doiel
     given_name: R. S.
@@ -8,8 +8,8 @@ authors:
 
 
 
-repository_code: https://github.com/rsdoiel/audioinfo
-version: 0.0.0
+repository_code: https://github.com/rsdoiel/audiobox
+version: 0.0.1
 license_url: https://www.gnu.org/licenses/agpl-3.0.txt
 
 programming_language:
@@ -23,9 +23,11 @@ programming_language:
 About this software
 ===================
 
-## audioinfo 0.0.0
+## audiobox 0.0.1
 
-
+- You can listen to music with audiobox via TUI.
+- Implemeneted new actions, player provides a TUI play
+- Started implementing Web UI and service
 
 ### Authors
 
@@ -36,11 +38,11 @@ About this software
 
 
 
-audioinfo is a go module that for managing audio metadata in an SQLite3 database. It uses &quot;https://github.com/dhowden/tag&quot; module to extract metadata that may be found in the audio file itself.
+audiobox is a go module that for managing audio metadata in an SQLite3 database. It uses &quot;https://github.com/dhowden/tag&quot; module to extract metadata that may be found in the audio file itself.
 
 - License: <https://www.gnu.org/licenses/agpl-3.0.txt>
-- GitHub: <https://github.com/rsdoiel/audioinfo>
-- Issues: <https://github.com/rsdoiel/audioinfo/issues>
+- GitHub: <https://github.com/rsdoiel/audiobox>
+- Issues: <https://github.com/rsdoiel/audiobox/issues>
 
 ### Programming languages
 

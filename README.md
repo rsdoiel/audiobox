@@ -1,8 +1,8 @@
 
 
-# audioinfo
+# audiobox
 
-audioinfo is a go module that for managing audio metadata in an SQLite3 database. It uses "https://github.com/dhowden/tag" module to extract metadata that may be found in the audio file itself.
+audiobox is a go module that for managing audio metadata in an SQLite3 database. It uses "https://github.com/dhowden/tag" module to extract metadata that may be found in the audio file itself.
 
 
 
@@ -28,7 +28,7 @@ audioinfo is a go module that for managing audio metadata in an SQLite3 database
 
 
 
-- [Getting Help, Reporting bugs](https://github.com/rsdoiel/audioinfo/issues)
+- [Getting Help, Reporting bugs](https://github.com/rsdoiel/audiobox/issues)
 - [LICENSE](https://www.gnu.org/licenses/agpl-3.0.txt)
 - [Installation](INSTALL.md)
 - [About](about.md)

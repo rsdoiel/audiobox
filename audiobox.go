@@ -1,6 +1,6 @@
-// Package audioinfo manages audio file metadata in a SQLite3 database,
+// Package audiobox manages audio file metadata in a SQLite3 database,
 // aligned with schema.org AudioObject and MusicRecording vocabulary.
-package audioinfo
+package audiobox
 
 import (
 	"crypto/sha256"
@@ -49,7 +49,7 @@ import (
  *   ChecksumAlgorithm  (string)     — always "sha256"
  *
  * Example:
- *   info := audioinfo.AudioInfo{
+ *   info := audiobox.AudioInfo{
  *     SchemaType:     "MusicRecording",
  *     Name:           "Goldberg Variations BWV 988",
  *     ContentURL:     "/home/alice/Music/bach/goldberg.flac",
@@ -86,7 +86,7 @@ type AudioInfo struct {
  * Always call Close when done.
  *
  * Example:
- *   col, err := audioinfo.LoadCollection("mymusic.yaml")
+ *   col, err := audiobox.LoadCollection("mymusic.yaml")
  *   if err != nil { log.Fatal(err) }
  *   defer col.Close()
  */
@@ -272,7 +272,7 @@ func (c *Collection) ProcessAudioFile(filePath string, logger *log.Logger) error
  *   if err := col.ScanDirectories(); err != nil { log.Fatal(err) }
  */
 func (c *Collection) ScanDirectories() error {
-	logger := log.New(os.Stderr, "audioinfo: ", 0)
+	logger := log.New(os.Stderr, "audiobox: ", 0)
 	return c.ScanDirectoriesWithProcessor(c.ProcessAudioFile, logger)
 }
 
@@ -744,7 +744,7 @@ func (c *Collection) regexSearch(tokens []queryToken) ([]AudioInfo, error) {
  *   error  — non-nil on database failure
  *
  * Example:
- *   id, err := col.Create(audioinfo.AudioInfo{Name: "My Track", ContentURL: "/music/track.mp3"})
+ *   id, err := col.Create(audiobox.AudioInfo{Name: "My Track", ContentURL: "/music/track.mp3"})
  */
 func (c *Collection) Create(info AudioInfo) (string, error) {
 	if !c.isOpen {

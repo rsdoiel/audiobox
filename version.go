@@ -1,4 +1,4 @@
-package audioinfo
+package audiobox
 
 import (
 	"strings"
@@ -6,13 +6,13 @@ import (
 
 const (
     // Version number of release
-    Version = "0.0.0"
+    Version = "0.0.1"
 
     // ReleaseDate, the date version.go was generated
-    ReleaseDate = "2026-04-24"
+    ReleaseDate = "2026-04-28"
 
     // ReleaseHash, the Git hash when version.go was generated
-    ReleaseHash = "2eec38b"
+    ReleaseHash = "f0341a1"
     LicenseText = `
 audioinfo a Go module for managing audio metadata in a SQLite3 database
 Copyright (C) 2026 R. S. Doiel

@@ -2,8 +2,8 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
 type: software
-title: audioinfo
-abstract: "audioinfo is a go module that for managing audio metadata in an SQLite3 database. It uses "https://github.com/dhowden/tag" module to extract metadata that may be found in the audio file itself."
+title: audiobox
+abstract: "audiobox is a go module that for managing audio metadata in an SQLite3 database. It uses "https://github.com/dhowden/tag" module to extract metadata that may be found in the audio file itself."
 authors:
   - family-names: Doiel
     given-names: R. S.
@@ -11,8 +11,8 @@ authors:
     email: rsdoiel@gmail.com
 
 
-repository-code: "https://github.com/rsdoiel/audioinfo"
-version: 0.0.0
+repository-code: "https://github.com/rsdoiel/audiobox"
+version: 0.0.1
 
 
 license-url: "https://www.gnu.org/licenses/agpl-3.0.txt"

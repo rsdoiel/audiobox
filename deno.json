@@ -8,7 +8,7 @@
     "deno-dom": "jsr:@b-fuze/deno-dom@^0.1.48"
   },
   "tasks": {
-    "bundle": "deno bundle --platform browser audioinfo_player.ts -o htdocs/module/audioinfo.js",
-    "test": "deno test --allow-read audioinfo_api_test.ts audioinfo_player_test.ts"
+    "bundle": "deno bundle --platform browser audiobox_player.ts -o htdocs/module/audiobox.js",
+    "test": "deno test --allow-read audiobox_api_test.ts audiobox_player_test.ts"
   }
 }

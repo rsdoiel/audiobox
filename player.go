@@ -1,6 +1,6 @@
 // player.go — terminal UI audio player built on termlib and AudioEngine.
 // Copyright (C) 2025 R. S. Doiel
-package audioinfo
+package audiobox
 
 import (
 	"fmt"
@@ -29,6 +29,14 @@ const (
 	tabTitles
 )
 
+// panelFocus tracks which panel currently receives keyboard navigation.
+type panelFocus int
+
+const (
+	focusBrowse panelFocus = iota
+	focusQueue
+)
+
 // playerLayout holds computed row/column positions for the current terminal size.
 type playerLayout struct {
 	width     int
@@ -48,22 +56,26 @@ type playerLayout struct {
 
 // playerState holds all mutable TUI state.
 type playerState struct {
-	view         viewMode
-	tab          tabMode
-	browseList   []string // items shown in browse panel
-	browseAlbums []Album  // parallel to browseList when tab == tabAlbums
-	browseIdx    int      // cursor position in browseList
-	browseOff    int      // scroll offset
-	results      []AudioInfo // tracks from last search
-	queue        []AudioInfo
-	queueIdx     int // index of the currently playing track
-	queueOff     int // scroll offset in queue
-	searchQuery  string // query being typed (viewSearchInput)
-	elapsed      time.Duration
-	total        time.Duration
-	paused       bool
-	volume       int    // 0–100
-	statusMsg    string // ephemeral one-shot message
+	view              viewMode
+	tab               tabMode
+	browseList        []string    // items shown in browse panel
+	browseAlbums      []Album     // parallel to browseList when tab == tabAlbums
+	browseIdx         int         // cursor position in browseList
+	browseOff         int         // scroll offset
+	visibleBrowseRows int         // updated each draw
+	results           []AudioInfo // tracks from last search
+	queue             []AudioInfo
+	queueIdx          int        // index of the currently playing track
+	queueCursor       int        // navigation cursor in queue panel
+	queueOff          int        // scroll offset in queue
+	visibleQueueRows  int        // updated each draw
+	focus             panelFocus // which panel has keyboard focus
+	searchQuery       string     // query being typed (viewSearchInput)
+	elapsed           time.Duration
+	total             time.Duration
+	paused            bool
+	volume            int    // 0–100
+	statusMsg         string // ephemeral one-shot message
 }
 
 /** RunPlayer opens a full-screen TUI audio player for the given collection.
@@ -77,9 +89,9 @@ type playerState struct {
  *   error — non-nil if the audio engine or terminal cannot be initialised.
  *
  * Example:
- *   col, _ := audioinfo.LoadCollection("music.yaml")
+ *   col, _ := audiobox.LoadCollection("music.yaml")
  *   defer col.Close()
- *   if err := audioinfo.RunPlayer(col); err != nil {
+ *   if err := audiobox.RunPlayer(col); err != nil {
  *       log.Fatal(err)
  *   }
  */
@@ -125,7 +137,7 @@ func RunPlayer(coll *Collection) error {
 			if !ok {
 				return nil
 			}
-			if handleKey(k, state, engine, coll) {
+			if handleKey(k, state, engine, coll, lay) {
 				term.Clear()
 				term.Move(1, 1)
 				return nil
@@ -151,7 +163,7 @@ func RunPlayer(coll *Collection) error {
 }
 
 // handleKey processes one keystroke. Returns true if the player should exit.
-func handleKey(k termlib.Key, state *playerState, engine *AudioEngine, coll *Collection) bool {
+func handleKey(k termlib.Key, state *playerState, engine *AudioEngine, coll *Collection, lay playerLayout) bool {
 
 	// Search input mode intercepts all keys.
 	if state.view == viewSearchInput {
@@ -207,8 +219,22 @@ func handleKey(k termlib.Key, state *playerState, engine *AudioEngine, coll *Col
 		engine.SetVolume(engine.Volume() - 5)
 		state.volume = engine.Volume()
 
-	case termlib.Key('\t'): // Tab — cycle browse tabs
-		cycleBrowseTab(state, coll)
+	case termlib.Key('\t'): // Tab — toggle panel focus
+		if state.focus == focusBrowse {
+			state.focus = focusQueue
+		} else {
+			state.focus = focusBrowse
+		}
+
+	case termlib.KeyLeft: // cycle browse tabs backward (browse panel only)
+		if state.focus == focusBrowse {
+			cycleBrowseTab(state, coll, -1)
+		}
+
+	case termlib.KeyRight: // cycle browse tabs forward (browse panel only)
+		if state.focus == focusBrowse {
+			cycleBrowseTab(state, coll, +1)
+		}
 
 	case termlib.Key('/'): // enter search input mode
 		state.view = viewSearchInput
@@ -221,20 +247,171 @@ func handleKey(k termlib.Key, state *playerState, engine *AudioEngine, coll *Col
 		reloadBrowseTab(state, coll)
 
 	case termlib.KeyUp:
-		if state.browseIdx > 0 {
-			state.browseIdx--
-			if state.browseIdx < state.browseOff {
-				state.browseOff = state.browseIdx
+		switch state.focus {
+		case focusBrowse:
+			if state.browseIdx > 0 {
+				state.browseIdx--
+				if state.browseIdx < state.browseOff {
+					state.browseOff = state.browseIdx
+				}
+			}
+		case focusQueue:
+			if state.queueCursor > 0 {
+				state.queueCursor--
+				if state.queueCursor < state.queueOff {
+					state.queueOff = state.queueCursor
+				}
 			}
 		}
 
 	case termlib.KeyDown:
-		if state.browseIdx < len(state.browseList)-1 {
-			state.browseIdx++
+		switch state.focus {
+		case focusBrowse:
+			if state.browseIdx < len(state.browseList)-1 {
+				state.browseIdx++
+				vis := state.visibleBrowseRows
+				if vis < 1 {
+					vis = 1
+				}
+				if state.browseIdx >= state.browseOff+vis {
+					state.browseOff = state.browseIdx - vis + 1
+				}
+			}
+		case focusQueue:
+			if state.queueCursor < len(state.queue)-1 {
+				state.queueCursor++
+				vis := state.visibleQueueRows
+				if vis < 1 {
+					vis = 1
+				}
+				if state.queueCursor >= state.queueOff+vis {
+					state.queueOff = state.queueCursor - vis + 1
+				}
+			}
 		}
 
-	case termlib.Key('\r'), termlib.Key('\n'): // Enter — play selected
-		playSelected(state, engine, coll)
+	case termlib.KeyPageUp:
+		switch state.focus {
+		case focusBrowse:
+			vis := state.visibleBrowseRows
+			if vis < 1 {
+				vis = 1
+			}
+			state.browseIdx -= vis
+			if state.browseIdx < 0 {
+				state.browseIdx = 0
+			}
+			state.browseOff -= vis
+			if state.browseOff < 0 {
+				state.browseOff = 0
+			}
+			if state.browseIdx < state.browseOff {
+				state.browseOff = state.browseIdx
+			}
+		case focusQueue:
+			vis := state.visibleQueueRows
+			if vis < 1 {
+				vis = 1
+			}
+			state.queueCursor -= vis
+			if state.queueCursor < 0 {
+				state.queueCursor = 0
+			}
+			state.queueOff -= vis
+			if state.queueOff < 0 {
+				state.queueOff = 0
+			}
+			if state.queueCursor < state.queueOff {
+				state.queueOff = state.queueCursor
+			}
+		}
+
+	case termlib.KeyPageDown:
+		switch state.focus {
+		case focusBrowse:
+			vis := state.visibleBrowseRows
+			if vis < 1 {
+				vis = 1
+			}
+			n := len(state.browseList)
+			state.browseIdx += vis
+			if state.browseIdx >= n {
+				state.browseIdx = n - 1
+			}
+			if state.browseIdx < 0 {
+				state.browseIdx = 0
+			}
+			if state.browseIdx >= state.browseOff+vis {
+				state.browseOff = state.browseIdx - vis + 1
+			}
+		case focusQueue:
+			vis := state.visibleQueueRows
+			if vis < 1 {
+				vis = 1
+			}
+			n := len(state.queue)
+			state.queueCursor += vis
+			if state.queueCursor >= n {
+				state.queueCursor = n - 1
+			}
+			if state.queueCursor < 0 {
+				state.queueCursor = 0
+			}
+			if state.queueCursor >= state.queueOff+vis {
+				state.queueOff = state.queueCursor - vis + 1
+			}
+		}
+
+	case termlib.KeyHome:
+		switch state.focus {
+		case focusBrowse:
+			state.browseIdx = 0
+			state.browseOff = 0
+		case focusQueue:
+			state.queueCursor = 0
+			state.queueOff = 0
+		}
+
+	case termlib.KeyEnd:
+		switch state.focus {
+		case focusBrowse:
+			n := len(state.browseList)
+			if n > 0 {
+				state.browseIdx = n - 1
+			}
+			vis := state.visibleBrowseRows
+			if vis < 1 {
+				vis = 1
+			}
+			state.browseOff = state.browseIdx - vis + 1
+			if state.browseOff < 0 {
+				state.browseOff = 0
+			}
+		case focusQueue:
+			n := len(state.queue)
+			if n > 0 {
+				state.queueCursor = n - 1
+			}
+			vis := state.visibleQueueRows
+			if vis < 1 {
+				vis = 1
+			}
+			state.queueOff = state.queueCursor - vis + 1
+			if state.queueOff < 0 {
+				state.queueOff = 0
+			}
+		}
+
+	case termlib.Key('\r'), termlib.Key('\n'): // Enter
+		switch state.focus {
+		case focusBrowse:
+			playSelected(state, engine, coll)
+		case focusQueue:
+			if len(state.queue) > 0 && state.queueCursor < len(state.queue) {
+				state.queueIdx = state.queueCursor
+				engine.Play(state.queue[state.queueIdx])
+			}
+		}
 
 	case termlib.Key('a'): // append selected to queue without starting playback
 		appendSelected(state, coll)
@@ -301,7 +478,7 @@ func drawTabBar(term *termlib.Terminal, lay playerLayout, state *playerState, co
 	term.Move(1, 1)
 	term.ClrToEOL()
 	term.SetBold()
-	term.Print(termlib.Truncate("audioinfo — "+collName, lay.width/2))
+	term.Print(termlib.Truncate("audiobox — "+collName, lay.width/2))
 	term.ResetStyle()
 
 	labels := []string{"Albums", "Artists", "Titles"}
@@ -320,6 +497,8 @@ func drawTabBar(term *termlib.Terminal, lay playerLayout, state *playerState, co
 
 func drawBrowseList(term *termlib.Terminal, lay playerLayout, state *playerState) {
 	visible := lay.browseBot - lay.browseTop + 1
+	state.visibleBrowseRows = visible
+	focused := state.focus == focusBrowse
 	for i := 0; i < visible; i++ {
 		row := lay.browseTop + i
 		term.Move(row, 1)
@@ -329,12 +508,19 @@ func drawBrowseList(term *termlib.Terminal, lay playerLayout, state *playerState
 			continue
 		}
 		label := termlib.PadRight(state.browseList[idx], lay.width-2)
-		if idx == state.browseIdx {
+		isCursor := idx == state.browseIdx
+		switch {
+		case isCursor && focused:
 			term.SetFgColor(termlib.Black)
 			term.SetBgColor(termlib.CyanBg)
 			term.Print(" " + label)
 			term.ResetStyle()
-		} else {
+		case isCursor:
+			// dim indicator when panel focus is elsewhere
+			term.SetFgColor(termlib.Cyan)
+			term.Print(" " + label)
+			term.ResetStyle()
+		default:
 			term.Print(" " + label)
 		}
 	}
@@ -406,13 +592,19 @@ func drawNowPlaying(term *termlib.Terminal, lay playerLayout, state *playerState
 }
 
 func drawQueue(term *termlib.Terminal, lay playerLayout, state *playerState) {
+	focused := state.focus == focusQueue
 	term.Move(lay.queueTop, 1)
 	term.ClrToEOL()
 	term.SetBold()
+	if focused {
+		term.SetFgColor(termlib.Black)
+		term.SetBgColor(termlib.CyanBg)
+	}
 	term.Print(fmt.Sprintf("Queue (%d tracks)", len(state.queue)))
 	term.ResetStyle()
 
 	visible := lay.queueBot - lay.queueTop // header takes one row
+	state.visibleQueueRows = visible
 	for i := 0; i < visible; i++ {
 		row := lay.queueTop + 1 + i
 		term.Move(row, 1)
@@ -422,17 +614,22 @@ func drawQueue(term *termlib.Terminal, lay playerLayout, state *playerState) {
 			continue
 		}
 		track := state.queue[idx]
+		isPlaying := idx == state.queueIdx
+		isCursor := focused && idx == state.queueCursor
 		prefix := "  "
-		isCurrent := idx == state.queueIdx
-		if isCurrent {
+		if isPlaying {
 			prefix = "▶ "
 		}
 		label := termlib.PadRight(fmt.Sprintf("%d. %s", idx+1, track.Name), lay.width-4)
-		if isCurrent {
+		switch {
+		case isCursor:
+			term.SetFgColor(termlib.Black)
+			term.SetBgColor(termlib.CyanBg)
+		case isPlaying:
 			term.SetFgColor(termlib.Cyan)
 		}
 		term.Print(prefix + label)
-		if isCurrent {
+		if isCursor || isPlaying {
 			term.ResetStyle()
 		}
 	}
@@ -456,7 +653,12 @@ func drawHints(term *termlib.Terminal, lay playerLayout, state *playerState) {
 		return
 	}
 	term.SetFgColor(termlib.Cyan)
-	term.Print("[Spc] play/pause  [n/p] next/prev  [Tab] browse  [/] search  [a] add  [q] quit")
+	switch state.focus {
+	case focusBrowse:
+		term.Print("[↑↓] move  [PgUp/Dn] page  [Home/End]  [←→] tabs  [Enter] play  [a] add  [Tab]→queue  [/] search  [q] quit")
+	case focusQueue:
+		term.Print("[↑↓] move  [PgUp/Dn] page  [Home/End]  [Enter] jump  [Tab]→browse  [Spc] pause  [n/p] next/prev  [q] quit")
+	}
 	term.ResetStyle()
 }
 
@@ -494,6 +696,7 @@ func playSelected(state *playerState, engine *AudioEngine, coll *Collection) {
 		if state.browseIdx < len(state.results) {
 			state.queue = []AudioInfo{state.results[state.browseIdx]}
 			state.queueIdx = 0
+			state.queueCursor = 0
 			state.queueOff = 0
 			engine.Play(state.queue[0])
 		}
@@ -505,6 +708,7 @@ func playSelected(state *playerState, engine *AudioEngine, coll *Collection) {
 	}
 	state.queue = results
 	state.queueIdx = 0
+	state.queueCursor = 0
 	state.queueOff = 0
 	engine.Play(state.queue[0])
 }
@@ -557,9 +761,9 @@ func browseQuery(state *playerState) string {
 	}
 }
 
-// cycleBrowseTab advances to the next tab and loads its list.
-func cycleBrowseTab(state *playerState, coll *Collection) {
-	state.tab = (state.tab + 1) % 3
+// cycleBrowseTab advances the browse tab by delta (+1 or -1) and loads its list.
+func cycleBrowseTab(state *playerState, coll *Collection, delta int) {
+	state.tab = tabMode((int(state.tab) + delta + 3) % 3)
 	state.browseIdx = 0
 	state.browseOff = 0
 	state.view = viewBrowse
@@ -588,10 +792,17 @@ func reloadBrowseTab(state *playerState, coll *Collection) {
 	}
 }
 
-// scrollQueueToVisible adjusts queueOff so that queueIdx is in view.
+// scrollQueueToVisible adjusts queueOff so that queueIdx (the playing track) is in view.
 func scrollQueueToVisible(state *playerState) {
+	vis := state.visibleQueueRows
+	if vis < 1 {
+		vis = 1
+	}
 	if state.queueIdx < state.queueOff {
 		state.queueOff = state.queueIdx
+	}
+	if state.queueIdx >= state.queueOff+vis {
+		state.queueOff = state.queueIdx - vis + 1
 	}
 }
 

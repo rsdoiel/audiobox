@@ -52,10 +52,10 @@ export interface ScanStarted {
   started_at: string;
 }
 
-/** AudioInfoAPI is a typed fetch wrapper for all audioinfo HTTP JSON endpoints.
+/** AudioInfoAPI is a typed fetch wrapper for all audiobox HTTP JSON endpoints.
  *
  * Parameters:
- *   baseUrl (string) — origin of the audioinfo server; defaults to "" (same-origin)
+ *   baseUrl (string) — origin of the audiobox server; defaults to "" (same-origin)
  *
  * Example:
  *   const api = new AudioInfoAPI("http://localhost:8010");

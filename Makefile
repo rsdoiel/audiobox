@@ -4,11 +4,11 @@
 #
 # Simple Makefile for Golang based Projects built under POSIX.
 #
-PROJECT = audioinfo
+PROJECT = audiobox
 
 GIT_GROUP = Laboratory
 
-PROGRAMS = audioinfo
+PROGRAMS = audiobox
 
 RELEASE_DATE = $(shell date +%Y-%m-%d)
 
@@ -88,9 +88,9 @@ installer.ps1: .FORCE
 	cmt codemeta.json installer.ps1
 
 
-bundle: htdocs/module/audioinfo.js
+bundle: htdocs/module/audiobox.js
 
-htdocs/module/audioinfo.js: audioinfo_player.ts audioinfo_api.ts deno.json
+htdocs/module/audiobox.js: audiobox_player.ts audiobox_api.ts deno.json
 	@mkdir -p htdocs/module
 	deno task bundle
 

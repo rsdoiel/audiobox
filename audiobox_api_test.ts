@@ -1,5 +1,5 @@
 import { assertEquals, assertRejects } from "@std/assert";
-import { AudioInfoAPI, type AudioInfo, type ScanStatus } from "./audioinfo_api.ts";
+import { AudioInfoAPI, type AudioInfo, type ScanStatus } from "./audiobox_api.ts";
 
 type FetchFn = typeof globalThis.fetch;
 const originalFetch: FetchFn = globalThis.fetch;

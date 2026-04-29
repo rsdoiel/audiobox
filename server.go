@@ -1,4 +1,4 @@
-package audioinfo
+package audiobox
 
 import (
 	"encoding/json"
@@ -63,7 +63,7 @@ func (c *Collection) Serve(logger *log.Logger) error {
 	}
 
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
-	logger.Printf("audioinfo server listening on http://%s", addr)
+	logger.Printf("audiobox server listening on http://%s", addr)
 	return http.ListenAndServe(addr, corsMiddleware(c.cfg.CORSOrigin, mux))
 }
 
@@ -272,7 +272,7 @@ func (c *Collection) handleAudio(logger *log.Logger) http.HandlerFunc {
 }
 
 // apiHelpMarkdown is the Markdown reference document returned by GET /api/help.
-const apiHelpMarkdown = `# audioinfo API Reference
+const apiHelpMarkdown = `# audiobox API Reference
 
 All endpoints are relative to http://127.0.0.1:<port> (default port 8010).
 

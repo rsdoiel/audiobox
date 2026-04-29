@@ -1,12 +1,12 @@
 #!/usr/bin/env pwsh
-# generated with CMTools 0.0.0 2eec38b
+# generated with CMTools 0.0.1 f0341a1
 
 #
 # Set the package name and version to install
 #
 param(
   [Parameter()]
-  [String]$VERSION = "0.0.0"
+  [String]$VERSION = "0.0.1"
 )
 [String]$PKG_VERSION = [Environment]::GetEnvironmentVariable("PKG_VERSION")
 if ($PKG_VERSION) {
@@ -14,7 +14,7 @@ if ($PKG_VERSION) {
 	Write-Output "Using '${PKG_VERSION}' for version value '${VERSION}'"
 }
 
-$PACKAGE = "audioinfo"
+$PACKAGE = "audiobox"
 $GIT_GROUP = "rsdoiel"
 $RELEASE = "https://github.com/${GIT_GROUP}/${PACKAGE}/releases/tag/v${VERSION}"
 $SYSTEM_TYPE = Get-ComputerInfo -Property CsSystemType

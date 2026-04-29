@@ -1,4 +1,4 @@
-package audioinfo
+package audiobox
 
 const (
 	/** PropertyDOI is the propertyID for Digital Object Identifiers.
@@ -81,8 +81,8 @@ const (
  *   Name       (string) — optional human-readable label
  *
  * Example:
- *   id := audioinfo.Identifier{
- *     PropertyID: audioinfo.PropertyDOI,
+ *   id := audiobox.Identifier{
+ *     PropertyID: audiobox.PropertyDOI,
  *     Value:      "10.1234/example",
  *     URL:        "https://doi.org/10.1234/example",
  *   }
@@ -97,9 +97,9 @@ type Identifier struct {
 /** Identifiers is an ordered list of Identifier values associated with a resource or agent.
  *
  * Example:
- *   ids := audioinfo.Identifiers{
- *     {PropertyID: audioinfo.PropertyDOI,  Value: "10.1234/ex"},
- *     {PropertyID: audioinfo.PropertyISRC, Value: "USRC17607839"},
+ *   ids := audiobox.Identifiers{
+ *     {PropertyID: audiobox.PropertyDOI,  Value: "10.1234/ex"},
+ *     {PropertyID: audiobox.PropertyISRC, Value: "USRC17607839"},
  *   }
  */
 type Identifiers []Identifier
@@ -115,7 +115,7 @@ type Identifiers []Identifier
  *   Dir         (string) — absolute path to the directory containing the album's tracks
  *
  * Example:
- *   alb := audioinfo.Album{
+ *   alb := audiobox.Album{
  *     Name:        "801 Live",
  *     DisplayName: "801 Live [801-Live-UK]",
  *     Dir:         "/home/alice/Music/801/801-Live-UK",
@@ -135,11 +135,11 @@ type Album struct {
  *   Identifiers (Identifiers) — list of identifiers (ISNI, ORCID, ROR, MusicBrainz, VIAF, etc.)
  *
  * Example:
- *   a := audioinfo.Agent{
+ *   a := audiobox.Agent{
  *     Type: "Person",
  *     Name: "Johann Sebastian Bach",
- *     Identifiers: audioinfo.Identifiers{
- *       {PropertyID: audioinfo.PropertyVIAF, Value: "29639567", URL: "https://viaf.org/viaf/29639567"},
+ *     Identifiers: audiobox.Identifiers{
+ *       {PropertyID: audiobox.PropertyVIAF, Value: "29639567", URL: "https://viaf.org/viaf/29639567"},
  *     },
  *   }
  */

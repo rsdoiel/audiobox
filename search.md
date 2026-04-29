@@ -1,6 +1,6 @@
 
 
-# audioinfo
+# audiobox
 
 <link href="./pagefind/pagefind-ui.css" rel="stylesheet">
 <script src="./pagefind/pagefind-ui.js" type="text/javascript"></script>

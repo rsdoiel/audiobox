@@ -1,4 +1,4 @@
-package audioinfo
+package audiobox
 
 import (
 	"database/sql"
@@ -46,7 +46,7 @@ func resolveYAMLPath(path string) string {
  *   CORSOrigin  (string) — Access-Control-Allow-Origin value; "" means "*", "off" disables CORS
  *
  * Example:
- *   cfg := audioinfo.CollectionConfig{
+ *   cfg := audiobox.CollectionConfig{
  *     Name:        "mymusic",
  *     Description: "My personal music archive",
  *     Database:    "mymusic.db",
@@ -75,7 +75,7 @@ type CollectionConfig struct {
  *   error            — non-nil if the file cannot be read or parsed
  *
  * Example:
- *   cfg, err := audioinfo.LoadConfig("mymusic.yaml")
+ *   cfg, err := audiobox.LoadConfig("mymusic.yaml")
  */
 func LoadConfig(yamlPath string) (CollectionConfig, error) {
 	data, err := os.ReadFile(yamlPath)
@@ -99,7 +99,7 @@ func LoadConfig(yamlPath string) (CollectionConfig, error) {
  *   error — non-nil if the file cannot be written
  *
  * Example:
- *   err := audioinfo.SaveConfig("mymusic.yaml", cfg)
+ *   err := audiobox.SaveConfig("mymusic.yaml", cfg)
  */
 func SaveConfig(yamlPath string, cfg CollectionConfig) error {
 	data, err := yaml.Marshal(cfg)
@@ -129,7 +129,7 @@ func SaveConfig(yamlPath string, cfg CollectionConfig) error {
  *   error       — non-nil on any failure; partial files are cleaned up before returning
  *
  * Example:
- *   col, err := audioinfo.NewCollection("mymusic", "/home/alice/Music", "Alice's archive")
+ *   col, err := audiobox.NewCollection("mymusic", "/home/alice/Music", "Alice's archive")
  *   if err != nil { log.Fatal(err) }
  *   defer col.Close()
  */
@@ -181,7 +181,7 @@ func NewCollection(name, audioDir, description string) (*Collection, error) {
  *   error       — non-nil if the config cannot be read or the database cannot be opened
  *
  * Example:
- *   col, err := audioinfo.LoadCollection("mymusic.yaml")
+ *   col, err := audiobox.LoadCollection("mymusic.yaml")
  *   if err != nil { log.Fatal(err) }
  *   defer col.Close()
  */

@@ -1,4 +1,4 @@
-package audioinfo
+package audiobox
 
 import (
 	"encoding/json"
@@ -596,7 +596,7 @@ func TestComputeSHA256(t *testing.T) {
 	if err != nil {
 		t.Fatalf("creating temp file: %v", err)
 	}
-	f.WriteString("hello audioinfo")
+	f.WriteString("hello audiobox")
 	f.Close()
 	defer os.Remove(f.Name())
 

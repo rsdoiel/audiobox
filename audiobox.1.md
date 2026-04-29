@@ -1,9 +1,9 @@
 
-./bin/audioinfo(1) — audio collection metadata manager
+./bin/audiobox(1) — audio collection metadata manager
 
 SYNOPSIS
 
-  ./bin/audioinfo [OPTIONS] ACTION [COLLECTION.yaml] [PARAMETERS]
+  ./bin/audiobox [OPTIONS] ACTION [COLLECTION.yaml] [PARAMETERS]
 
 OPTIONS
 
@@ -47,14 +47,14 @@ ACTIONS
 
 EXAMPLES
 
-  ./bin/audioinfo init mymusic ~/Music "My personal archive"
-  ./bin/audioinfo scan mymusic.yaml
-  ./bin/audioinfo list mymusic.yaml artists
-  ./bin/audioinfo search mymusic.yaml "Bach"
-  ./bin/audioinfo show mymusic.yaml 550e8400-e29b-41d4-a716-446655440000
-  ./bin/audioinfo delete mymusic.yaml 550e8400-e29b-41d4-a716-446655440000
+  ./bin/audiobox init mymusic ~/Music "My personal archive"
+  ./bin/audiobox scan mymusic.yaml
+  ./bin/audiobox list mymusic.yaml artists
+  ./bin/audiobox search mymusic.yaml "Bach"
+  ./bin/audiobox show mymusic.yaml 550e8400-e29b-41d4-a716-446655440000
+  ./bin/audiobox delete mymusic.yaml 550e8400-e29b-41d4-a716-446655440000
 
 SEE ALSO
 
-  ./bin/audioinfo(1) man page, https://github.com/rsdoiel/audioinfo
+  ./bin/audiobox(1) man page, https://github.com/rsdoiel/audiobox
 

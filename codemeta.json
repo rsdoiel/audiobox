@@ -1,7 +1,7 @@
 {
   "@context": "https://w3id.org/codemeta/3.0",
   "type": "SoftwareSourceCode",
-  "codeRepository": "https://github.com/rsdoiel/audioinfo",
+  "codeRepository": "https://github.com/rsdoiel/audiobox",
   "author": [
     {
       "id": "https://orcid.org/0000-0003-0900-6903",
@@ -13,8 +13,8 @@
   ],
   "dateCreated": "2026-04-24",
   "dateModified": "2026-04-28",
-  "description": "audioinfo is a go module that for managing audio metadata in an SQLite3 database. It uses \"https://github.com/dhowden/tag\" module to extract metadata that may be found in the audio file itself.",
-  "name": "audioinfo",
+  "description": "audiobox is a go module that for managing audio metadata in an SQLite3 database. It uses \"https://github.com/dhowden/tag\" module to extract metadata that may be found in the audio file itself.",
+  "name": "audiobox",
   "license": "https://www.gnu.org/licenses/agpl-3.0.txt",
   "programmingLanguage": [
     "Go >= 1.26.2",
@@ -32,8 +32,8 @@
   ],
   "version": "0.0.1",
   "developmentStatus": "concept",
-  "issueTracker": "https://github.com/rsdoiel/audioinfo/issues",
-  "releaseNotes": "- You can listen to music with audioinfo via TUI.\n- Implemeneted new actions, player provides a TUI play\n- Started implementing Web UI and service",
+  "issueTracker": "https://github.com/rsdoiel/audiobox/issues",
+  "releaseNotes": "- You can listen to music with audiobox via TUI.\n- Implemeneted new actions, player provides a TUI play\n- Started implementing Web UI and service",
   "copyrightYear": 2026,
   "copyrightHolder": "R. S. Doiel"
 }
