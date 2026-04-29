@@ -917,6 +917,51 @@ func (c *Collection) Delete(id string) error {
 	return nil
 }
 
+/** Sweep removes database records whose ContentURL no longer exists on disk.
+ * It queries all content_url values in the collection, checks each path with
+ * os.Stat, and deletes the record (and its search-index entry) for every file
+ * that is missing.  The number of removed records is returned.
+ *
+ * Returns:
+ *   removed (int)   — count of records deleted
+ *   error           — non-nil on database failure
+ *
+ * Example:
+ *   n, err := col.Sweep()
+ *   fmt.Printf("removed %d stale records\n", n)
+ */
+func (c *Collection) Sweep() (int, error) {
+	if !c.isOpen {
+		return 0, fmt.Errorf("collection is not open")
+	}
+	rows, err := c.db.Query("SELECT id, content_url FROM audio_files WHERE content_url IS NOT NULL AND content_url != ''")
+	if err != nil {
+		return 0, fmt.Errorf("sweep: querying records: %w", err)
+	}
+	type record struct{ id, path string }
+	var stale []record
+	for rows.Next() {
+		var r record
+		if err := rows.Scan(&r.id, &r.path); err != nil {
+			rows.Close()
+			return 0, fmt.Errorf("sweep: scanning row: %w", err)
+		}
+		if _, err := os.Stat(r.path); os.IsNotExist(err) {
+			stale = append(stale, r)
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, fmt.Errorf("sweep: iterating rows: %w", err)
+	}
+	for _, r := range stale {
+		if err := c.Delete(r.id); err != nil {
+			return 0, fmt.Errorf("sweep: deleting %s (%s): %w", r.id, r.path, err)
+		}
+	}
+	return len(stale), nil
+}
+
 // deslugify converts a directory-name slug into a human-readable album title.
 // Hyphens and underscores are treated as space placeholders; other characters
 // (including parentheses, apostrophes, digits) are preserved as-is.

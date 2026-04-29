@@ -42,6 +42,9 @@ ACTIONS
   server COLLECTION.yaml
     Start a localhost web server for the collection.
 
+  sweep COLLECTION.yaml
+    Remove database records whose audio files are no longer present on disk.
+
   help [ACTION]
     Display detailed help for an action.
 
@@ -49,6 +52,7 @@ EXAMPLES
 
   ./bin/audiobox init mymusic ~/Music "My personal archive"
   ./bin/audiobox scan mymusic.yaml
+  ./bin/audiobox sweep mymusic.yaml
   ./bin/audiobox list mymusic.yaml artists
   ./bin/audiobox search mymusic.yaml "Bach"
   ./bin/audiobox show mymusic.yaml 550e8400-e29b-41d4-a716-446655440000

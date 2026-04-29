@@ -73,6 +73,9 @@ ACTIONS
   server COLLECTION.yaml
     Start a localhost web server for the collection.
 
+  sweep COLLECTION.yaml
+    Remove database records whose audio files are no longer present on disk.
+
   help [ACTION]
     Display detailed help for an action.
 
@@ -80,6 +83,7 @@ EXAMPLES
 
   {app_name} init mymusic ~/Music "My personal archive"
   {app_name} scan mymusic.yaml
+  {app_name} sweep mymusic.yaml
   {app_name} list mymusic.yaml artists
   {app_name} search mymusic.yaml "Bach"
   {app_name} show mymusic.yaml 550e8400-e29b-41d4-a716-446655440000
@@ -232,6 +236,26 @@ EXAMPLES
   {app_name} delete mymusic.yaml 550e8400-e29b-41d4-a716-446655440000
 `
 
+const helpSweep = `
+{app_name} sweep — remove stale database records
+
+SYNOPSIS
+
+  {app_name} sweep COLLECTION.yaml
+
+DESCRIPTION
+
+  Compares every content_url stored in the database against the filesystem.
+  Any record whose file no longer exists inside the collection's audioDir tree
+  is permanently removed from the database and the full-text search index.
+
+  A summary line reports how many records were removed.
+
+EXAMPLES
+
+  {app_name} sweep mymusic.yaml
+`
+
 const helpServer = `
 {app_name} server — start a localhost web server for the collection
 
@@ -279,6 +303,7 @@ EXAMPLES
 var helpTopics = map[string]string{
 	"init":   helpInit,
 	"scan":   helpScan,
+	"sweep":  helpSweep,
 	"list":   helpList,
 	"search": helpSearch,
 	"show":   helpShow,
@@ -330,7 +355,7 @@ func main() {
 		handleInit(args)
 	case "help":
 		handleHelp(appName, args)
-	case "scan", "list", "search", "show", "delete", "server", "player":
+	case "scan", "sweep", "list", "search", "show", "delete", "server", "player":
 		if len(args) < 1 {
 			fmt.Fprintf(os.Stderr, "error: %s requires a COLLECTION.yaml argument\n", action)
 			os.Exit(1)
@@ -344,6 +369,8 @@ func main() {
 		switch action {
 		case "scan":
 			handleScan(col)
+		case "sweep":
+			handleSweep(col)
 		case "list":
 			handleList(col, rest, format)
 		case "search":
@@ -443,6 +470,14 @@ func handleScan(col *audiobox.Collection) {
 		log.Fatalf("scan failed: %v", err)
 	}
 	fmt.Print("Scan complete.\n")
+}
+
+func handleSweep(col *audiobox.Collection) {
+	n, err := col.Sweep()
+	if err != nil {
+		log.Fatalf("sweep failed: %v", err)
+	}
+	fmt.Printf("Sweep complete: %d stale record(s) removed.\n", n)
 }
 
 func handleList(col *audiobox.Collection, args []string, format OutputFormat) {
