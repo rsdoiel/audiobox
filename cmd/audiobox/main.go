@@ -12,7 +12,6 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/rsdoiel/audiobox"
-	"github.com/rsdoiel/termlib"
 )
 
 // OutputFormat represents the serialisation format for command output.
@@ -34,7 +33,7 @@ const helpGeneral = `
 
 SYNOPSIS
 
-  {app_name} [OPTIONS] ACTION [COLLECTION.yaml] [PARAMETERS]
+  {app_name} [OPTIONS] ACTION [PARAMETERS]
 
 OPTIONS
 
@@ -52,28 +51,28 @@ OPTIONS
 
 ACTIONS
 
-  init [NAME [ROOTDIR [DESCRIPTION]]]
-    Initialise a new collection.  Missing arguments are prompted interactively.
+  init
+    Initialise (or upgrade) the standard ~/Audio audiobox installation.
 
-  scan COLLECTION.yaml
-    Walk the collection's audioDir and ingest every audio file found.
+  scan
+    Walk ~/Audio and ingest every audio file found.
 
-  list COLLECTION.yaml [albums|artists|titles]
+  list [albums|artists|titles]
     List distinct albums, artists, or titles (default: albums).
 
-  search COLLECTION.yaml QUERY
+  search QUERY
     Search records by title, album, or artist.
 
-  show COLLECTION.yaml ID
+  show ID
     Display full metadata for the record with the given UUID.
 
-  delete COLLECTION.yaml ID
+  delete ID
     Remove the record with the given UUID from the collection.
 
-  server COLLECTION.yaml
+  server
     Start a localhost web server for the collection.
 
-  sweep COLLECTION.yaml
+  sweep
     Remove database records whose audio files are no longer present on disk.
 
   help [ACTION]
@@ -81,13 +80,13 @@ ACTIONS
 
 EXAMPLES
 
-  {app_name} init mymusic ~/Music "My personal archive"
-  {app_name} scan mymusic.yaml
-  {app_name} sweep mymusic.yaml
-  {app_name} list mymusic.yaml artists
-  {app_name} search mymusic.yaml "Bach"
-  {app_name} show mymusic.yaml 550e8400-e29b-41d4-a716-446655440000
-  {app_name} delete mymusic.yaml 550e8400-e29b-41d4-a716-446655440000
+  {app_name} init
+  {app_name} scan
+  {app_name} sweep
+  {app_name} list artists
+  {app_name} search "Bach"
+  {app_name} show 550e8400-e29b-41d4-a716-446655440000
+  {app_name} delete 550e8400-e29b-41d4-a716-446655440000
 
 SEE ALSO
 
@@ -95,49 +94,46 @@ SEE ALSO
 `
 
 const helpInit = `
-{app_name} init — initialise a new audio collection
+{app_name} init — initialise or upgrade the standard audiobox installation
 
 SYNOPSIS
 
-  {app_name} init [NAME [ROOTDIR [DESCRIPTION]]]
+  {app_name} init
 
 DESCRIPTION
 
-  Creates NAME.yaml (the collection configuration) and NAME.db (the SQLite3
-  metadata database) in the current working directory.
+  Creates and populates ~/Audio with the standard audiobox layout.
+  Running init again is safe — it only creates what is missing.
 
-  ROOTDIR is the root of the audio file tree to scan.  It is stored as an
-  absolute path in the YAML.
+  Files and directories created:
 
-  If any arguments are omitted {app_name} prompts for the missing values
-  interactively.
+    ~/Audio/                 root audio directory
+    ~/Audio/audio.yaml       collection configuration
+    ~/Audio/audio.db         SQLite3 metadata database
+    ~/Audio/Music/           sub-directory for music
+    ~/Audio/Podcasts/        sub-directory for podcasts
+    ~/Audio/Theater/         sub-directory for theatre recordings
+    ~/Audio/Books/           sub-directory for audiobooks
 
-PARAMETERS
-
-  NAME         short identifier for the collection (no spaces recommended)
-  ROOTDIR      root directory of the audio file tree
-  DESCRIPTION  human-readable description (quote if it contains spaces)
+  The description in audio.yaml is set to "Audio collections for USER"
+  where USER is the current login name.
 
 EXAMPLES
 
-  # Supply all arguments at once
-  {app_name} init mymusic ~/Music "My personal music archive"
-
-  # Prompt for all values
   {app_name} init
 `
 
 const helpScan = `
-{app_name} scan — scan audioDir for audio files
+{app_name} scan — scan ~/Audio for audio files
 
 SYNOPSIS
 
-  {app_name} scan COLLECTION.yaml
+  {app_name} scan
 
 DESCRIPTION
 
-  Walks the audioDir recorded in COLLECTION.yaml and ingests every recognised
-  audio file (.mp3 .flac .ogg .m4a .wma .wav).  For each file {app_name}:
+  Walks ~/Audio and ingests every recognised audio file
+  (.mp3 .flac .ogg .m4a .wma .wav).  For each file {app_name}:
 
     1. Computes a SHA-256 checksum (fixity).
     2. Reads embedded ID3/Vorbis/MP4 tags.
@@ -149,7 +145,7 @@ DESCRIPTION
 
 EXAMPLES
 
-  {app_name} scan mymusic.yaml
+  {app_name} scan
 `
 
 const helpList = `
@@ -157,7 +153,7 @@ const helpList = `
 
 SYNOPSIS
 
-  {app_name} list COLLECTION.yaml [albums|artists|titles]
+  {app_name} list [albums|artists|titles]
 
 DESCRIPTION
 
@@ -170,9 +166,9 @@ OPTIONS
 
 EXAMPLES
 
-  {app_name} list mymusic.yaml
-  {app_name} list mymusic.yaml artists
-  {app_name} -fmt json list mymusic.yaml titles
+  {app_name} list
+  {app_name} list artists
+  {app_name} -fmt json list titles
 `
 
 const helpSearch = `
@@ -180,7 +176,7 @@ const helpSearch = `
 
 SYNOPSIS
 
-  {app_name} search COLLECTION.yaml QUERY
+  {app_name} search QUERY
 
 DESCRIPTION
 
@@ -194,8 +190,8 @@ OPTIONS
 
 EXAMPLES
 
-  {app_name} search mymusic.yaml "Goldberg Variations"
-  {app_name} -fmt json search mymusic.yaml Bach
+  {app_name} search "Goldberg Variations"
+  {app_name} -fmt json search Bach
 `
 
 const helpShow = `
@@ -203,7 +199,7 @@ const helpShow = `
 
 SYNOPSIS
 
-  {app_name} show COLLECTION.yaml ID
+  {app_name} show ID
 
 DESCRIPTION
 
@@ -215,8 +211,8 @@ OPTIONS
 
 EXAMPLES
 
-  {app_name} show mymusic.yaml 550e8400-e29b-41d4-a716-446655440000
-  {app_name} -fmt json show mymusic.yaml 550e8400-e29b-41d4-a716-446655440000
+  {app_name} show 550e8400-e29b-41d4-a716-446655440000
+  {app_name} -fmt json show 550e8400-e29b-41d4-a716-446655440000
 `
 
 const helpDelete = `
@@ -224,7 +220,7 @@ const helpDelete = `
 
 SYNOPSIS
 
-  {app_name} delete COLLECTION.yaml ID
+  {app_name} delete ID
 
 DESCRIPTION
 
@@ -233,7 +229,7 @@ DESCRIPTION
 
 EXAMPLES
 
-  {app_name} delete mymusic.yaml 550e8400-e29b-41d4-a716-446655440000
+  {app_name} delete 550e8400-e29b-41d4-a716-446655440000
 `
 
 const helpSweep = `
@@ -241,19 +237,19 @@ const helpSweep = `
 
 SYNOPSIS
 
-  {app_name} sweep COLLECTION.yaml
+  {app_name} sweep
 
 DESCRIPTION
 
   Compares every content_url stored in the database against the filesystem.
-  Any record whose file no longer exists inside the collection's audioDir tree
-  is permanently removed from the database and the full-text search index.
+  Any record whose file no longer exists inside ~/Audio is permanently removed
+  from the database and the full-text search index.
 
   A summary line reports how many records were removed.
 
 EXAMPLES
 
-  {app_name} sweep mymusic.yaml
+  {app_name} sweep
 `
 
 const helpServer = `
@@ -261,7 +257,7 @@ const helpServer = `
 
 SYNOPSIS
 
-  {app_name} server COLLECTION.yaml
+  {app_name} server
 
 DESCRIPTION
 
@@ -270,9 +266,9 @@ DESCRIPTION
   Two types of content are served:
 
     /api/*   JSON endpoints for querying and managing the collection
-    /*       Static files from the htdocs directory configured in the YAML
+    /*       Static files from the htdocs directory configured in ~/Audio/audio.yaml
 
-  The port, htdocs directory, and CORS policy are set in COLLECTION.yaml:
+  The port, htdocs directory, and CORS policy are set in ~/Audio/audio.yaml:
 
     port (int)           port to listen on (default: 8010)
     htdocs (string)      path to static web content directory
@@ -297,7 +293,7 @@ ENDPOINTS
 
 EXAMPLES
 
-  {app_name} server mymusic.yaml
+  {app_name} server
 `
 
 var helpTopics = map[string]string{
@@ -356,29 +352,24 @@ func main() {
 	case "help":
 		handleHelp(appName, args)
 	case "scan", "sweep", "list", "search", "show", "delete", "server", "player":
-		if len(args) < 1 {
-			fmt.Fprintf(os.Stderr, "error: %s requires a COLLECTION.yaml argument\n", action)
-			os.Exit(1)
-		}
-		col, err := audiobox.LoadCollection(args[0])
+		col, err := audiobox.LoadAudiobox()
 		if err != nil {
 			log.Fatalf("error opening collection: %v", err)
 		}
 		defer col.Close()
-		rest := args[1:]
 		switch action {
 		case "scan":
 			handleScan(col)
 		case "sweep":
 			handleSweep(col)
 		case "list":
-			handleList(col, rest, format)
+			handleList(col, args, format)
 		case "search":
-			handleSearch(col, rest, format)
+			handleSearch(col, args, format)
 		case "show":
-			handleShow(col, rest, format)
+			handleShow(col, args, format)
 		case "delete":
-			handleDelete(col, rest)
+			handleDelete(col, args)
 		case "server":
 			handleServer(col)
 		case "player":
@@ -410,58 +401,15 @@ func handleHelp(appName string, args []string) {
 }
 
 func handleInit(args []string) {
-	name, audioDir, description := "", "", ""
-	if len(args) >= 1 {
-		name = args[0]
-	}
-	if len(args) >= 2 {
-		audioDir = args[1]
-	}
-	if len(args) >= 3 {
-		description = strings.Join(args[2:], " ")
-	}
-
-	// Prompt for any missing values interactively.
-	if name == "" || audioDir == "" {
-		le := termlib.NewLineEditor(os.Stdin, os.Stdout)
-		var err error
-		if name == "" {
-			name, err = le.Prompt("Collection name: ")
-			if err != nil {
-				log.Fatalf("init aborted: %v", err)
-			}
-			name = strings.TrimSpace(name)
-		}
-		if audioDir == "" {
-			audioDir, err = le.Prompt("Audio directory: ")
-			if err != nil {
-				log.Fatalf("init aborted: %v", err)
-			}
-			audioDir = strings.TrimSpace(audioDir)
-		}
-		if description == "" {
-			description, err = le.Prompt("Description (optional): ")
-			if err != nil && err != termlib.ErrInterrupted {
-				log.Fatalf("init aborted: %v", err)
-			}
-			description = strings.TrimSpace(description)
-		}
-	}
-
-	if name == "" || audioDir == "" {
-		fmt.Fprintln(os.Stderr, "error: name and root directory are required")
-		os.Exit(1)
-	}
-
-	col, err := audiobox.NewCollection(name, audioDir, description)
+	col, err := audiobox.InitAudiobox()
 	if err != nil {
-		log.Fatalf("error initialising collection: %v", err)
+		log.Fatalf("error initialising audiobox: %v", err)
 	}
-	col.Close()
+	defer col.Close()
 
 	cfg := col.Config()
-	fmt.Printf("Initialised collection %q\n  config:   %s.yaml\n  database: %s\n  audioDir:  %s\n",
-		cfg.Name, name, cfg.Database, cfg.AudioDir)
+	fmt.Printf("Initialised audiobox\n  config:   %s\n  database: %s\n  audioDir: %s\n",
+		col.ConfigPath(), cfg.Database, cfg.AudioDir)
 }
 
 func handleScan(col *audiobox.Collection) {

@@ -61,11 +61,9 @@ func NewAudioEngine() (*AudioEngine, error) {
 	if err := speaker.Init(audioSampleRate, bufSize); err != nil {
 		return nil, fmt.Errorf("speaker init: %w", err)
 	}
-	done := make(chan struct{})
-	close(done) // start in "done" state so Done() is immediately readable
 	return &AudioEngine{
 		volumePct: 80,
-		done:      done,
+		done:      nil, // nil channel blocks forever; Done() is inert until Play is called
 	}, nil
 }
 
@@ -217,6 +215,21 @@ func (e *AudioEngine) Position() (elapsed, total time.Duration) {
 	length := e.current.Len()
 	speaker.Unlock()
 	return e.currentFmt.SampleRate.D(pos), e.currentFmt.SampleRate.D(length)
+}
+
+/** Idle resets the engine to a quiescent state where Done() blocks indefinitely.
+ * Call this when the queue is exhausted so the event loop stops spinning on
+ * the closed done channel left by the last finished track.
+ *
+ * Example:
+ *   if !advanceQueue(state, engine) {
+ *       engine.Idle()
+ *   }
+ */
+func (e *AudioEngine) Idle() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.done = nil
 }
 
 /** Done returns a channel that is closed when the current track ends

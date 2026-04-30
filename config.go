@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"os/user"
 	"path/filepath"
 	"strings"
 
@@ -231,6 +232,117 @@ func LoadCollection(yamlPath string) (*Collection, error) {
 	}
 
 	return &Collection{db: db, cfg: cfg, cfgPath: absYAML, isOpen: true}, nil
+}
+
+/** ConfigPath returns the absolute path to the YAML configuration file for this Collection.
+ *
+ * Returns:
+ *   string — absolute path to the collection's YAML file
+ *
+ * Example:
+ *   fmt.Println(col.ConfigPath()) // "/home/alice/Audio/audio.yaml"
+ */
+func (c *Collection) ConfigPath() string {
+	return c.cfgPath
+}
+
+/** InitAudiobox initialises (or upgrades) the standard ~/Audio audiobox installation.
+ * It is idempotent: running it again fixes missing directories, files, or schema.
+ *
+ * Steps:
+ *   1. Creates ~/Audio if it does not exist.
+ *   2. Creates ~/Audio/Music, ~/Audio/Podcasts, ~/Audio/Theater, ~/Audio/Books.
+ *   3. Writes ~/Audio/audio.yaml if it does not exist, with AudioDir set to ~/Audio
+ *      and Description set to "Audio collections for $USER".
+ *   4. Opens (or creates) ~/Audio/audio.db and applies the schema.
+ *
+ * Returns:
+ *   *Collection — open, ready-to-use collection
+ *   error       — non-nil on any filesystem or database failure
+ *
+ * Example:
+ *   col, err := audiobox.InitAudiobox()
+ *   if err != nil { log.Fatal(err) }
+ *   defer col.Close()
+ */
+func InitAudiobox() (*Collection, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("resolving home directory: %w", err)
+	}
+
+	audioDir := filepath.Join(home, "Audio")
+	for _, sub := range []string{"", "Music", "Podcasts", "Theater", "Books"} {
+		if err := os.MkdirAll(filepath.Join(audioDir, sub), 0755); err != nil {
+			return nil, fmt.Errorf("creating directory %s: %w", filepath.Join(audioDir, sub), err)
+		}
+	}
+
+	yamlFile := filepath.Join(audioDir, "audio.yaml")
+	dbFile := filepath.Join(audioDir, "audio.db")
+
+	var cfg CollectionConfig
+	if _, err := os.Stat(yamlFile); os.IsNotExist(err) {
+		userName := os.Getenv("USER")
+		if userName == "" {
+			if u, uerr := user.Current(); uerr == nil {
+				userName = u.Username
+			}
+		}
+		cfg = CollectionConfig{
+			Name:        "audio",
+			Description: "Audio collections for " + userName,
+			Database:    "audio.db",
+			AudioDir:    audioDir,
+		}
+		if err := SaveConfig(yamlFile, cfg); err != nil {
+			return nil, err
+		}
+	} else {
+		cfg, err = LoadConfig(yamlFile)
+		if err != nil {
+			return nil, err
+		}
+		cfg.AudioDir, err = expandHome(cfg.AudioDir)
+		if err != nil {
+			return nil, err
+		}
+		if !filepath.IsAbs(cfg.AudioDir) {
+			cfg.AudioDir = filepath.Join(filepath.Dir(yamlFile), cfg.AudioDir)
+		}
+	}
+
+	db, err := openDB(dbFile)
+	if err != nil {
+		return nil, err
+	}
+	if err := initSchema(db); err != nil {
+		db.Close()
+		return nil, err
+	}
+	return &Collection{db: db, cfg: cfg, cfgPath: yamlFile, isOpen: true}, nil
+}
+
+/** LoadAudiobox opens the standard ~/Audio audiobox installation.
+ * It is the read-only counterpart to InitAudiobox: it loads ~/Audio/audio.yaml
+ * and the database it references without creating any files or directories.
+ *
+ * Returns:
+ *   *Collection — open, ready-to-use collection
+ *   error       — non-nil if ~/Audio/audio.yaml does not exist or cannot be opened
+ *
+ * Example:
+ *   col, err := audiobox.LoadAudiobox()
+ *   if err != nil { log.Fatal(err) }
+ *   defer col.Close()
+ */
+func LoadAudiobox() (*Collection, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("resolving home directory: %w", err)
+	}
+	yamlFile := filepath.Join(home, "Audio", "audio.yaml")
+	return LoadCollection(yamlFile)
 }
 
 // openDB opens (or creates) a SQLite3 database and sets the required pragmas.

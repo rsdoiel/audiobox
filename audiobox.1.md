@@ -3,7 +3,7 @@
 
 SYNOPSIS
 
-  ./bin/audiobox [OPTIONS] ACTION [COLLECTION.yaml] [PARAMETERS]
+  ./bin/audiobox [OPTIONS] ACTION [PARAMETERS]
 
 OPTIONS
 
@@ -21,28 +21,28 @@ OPTIONS
 
 ACTIONS
 
-  init [NAME [ROOTDIR [DESCRIPTION]]]
-    Initialise a new collection.  Missing arguments are prompted interactively.
+  init
+    Initialise (or upgrade) the standard ~/Audio audiobox installation.
 
-  scan COLLECTION.yaml
-    Walk the collection's audioDir and ingest every audio file found.
+  scan
+    Walk ~/Audio and ingest every audio file found.
 
-  list COLLECTION.yaml [albums|artists|titles]
+  list [albums|artists|titles]
     List distinct albums, artists, or titles (default: albums).
 
-  search COLLECTION.yaml QUERY
+  search QUERY
     Search records by title, album, or artist.
 
-  show COLLECTION.yaml ID
+  show ID
     Display full metadata for the record with the given UUID.
 
-  delete COLLECTION.yaml ID
+  delete ID
     Remove the record with the given UUID from the collection.
 
-  server COLLECTION.yaml
+  server
     Start a localhost web server for the collection.
 
-  sweep COLLECTION.yaml
+  sweep
     Remove database records whose audio files are no longer present on disk.
 
   help [ACTION]
@@ -50,13 +50,13 @@ ACTIONS
 
 EXAMPLES
 
-  ./bin/audiobox init mymusic ~/Music "My personal archive"
-  ./bin/audiobox scan mymusic.yaml
-  ./bin/audiobox sweep mymusic.yaml
-  ./bin/audiobox list mymusic.yaml artists
-  ./bin/audiobox search mymusic.yaml "Bach"
-  ./bin/audiobox show mymusic.yaml 550e8400-e29b-41d4-a716-446655440000
-  ./bin/audiobox delete mymusic.yaml 550e8400-e29b-41d4-a716-446655440000
+  ./bin/audiobox init
+  ./bin/audiobox scan
+  ./bin/audiobox sweep
+  ./bin/audiobox list artists
+  ./bin/audiobox search "Bach"
+  ./bin/audiobox show 550e8400-e29b-41d4-a716-446655440000
+  ./bin/audiobox delete 550e8400-e29b-41d4-a716-446655440000
 
 SEE ALSO
 

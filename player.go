@@ -146,17 +146,29 @@ func RunPlayer(coll *Collection) error {
 			drawAll(term, lay, state, coll.Config().Name)
 
 		case <-engine.Done():
-			advanceQueue(state, engine)
+			if !advanceQueue(state, engine) {
+				engine.Idle() // queue exhausted; stop Done() from firing continuously
+			}
 			lay = computeLayout(term)
 			drawAll(term, lay, state, coll.Config().Name)
 
 		case <-ticker.C:
-			state.elapsed, state.total = engine.Position()
-			state.paused = engine.IsPaused()
-			state.volume = engine.Volume()
-			term.HideCursor()
+			newElapsed, newTotal := engine.Position()
+			newPaused := engine.IsPaused()
+			newVolume := engine.Volume()
+			// Only redraw when something visible changed. Elapsed is compared at
+			// second granularity so a playing track redraws at most once per second.
+			if newElapsed.Truncate(time.Second) == state.elapsed.Truncate(time.Second) &&
+				newTotal == state.total &&
+				newPaused == state.paused &&
+				newVolume == state.volume {
+				break
+			}
+			state.elapsed = newElapsed
+			state.total = newTotal
+			state.paused = newPaused
+			state.volume = newVolume
 			drawNowPlaying(term, lay, state)
-			term.ShowCursor()
 			term.Refresh()
 		}
 	}
@@ -461,6 +473,7 @@ func computeLayout(term *termlib.Terminal) playerLayout {
 }
 
 // drawAll redraws every section of the screen.
+// The cursor stays hidden except in search input mode, where drawHints shows it.
 func drawAll(term *termlib.Terminal, lay playerLayout, state *playerState, collName string) {
 	term.HideCursor()
 	drawTabBar(term, lay, state, collName)
@@ -470,7 +483,6 @@ func drawAll(term *termlib.Terminal, lay playerLayout, state *playerState, collN
 	drawSeparator(term, lay.sep2, lay.width)
 	drawQueue(term, lay, state)
 	drawHints(term, lay, state)
-	term.ShowCursor()
 	term.Refresh()
 }
 
@@ -641,8 +653,9 @@ func drawHints(term *termlib.Terminal, lay playerLayout, state *playerState) {
 
 	if state.view == viewSearchInput {
 		term.SetFgColor(termlib.Yellow)
-		term.Print("Search: " + state.searchQuery + "█")
+		term.Print("Search: " + state.searchQuery)
 		term.ResetStyle()
+		term.ShowCursor()
 		return
 	}
 	if state.statusMsg != "" {
@@ -663,17 +676,19 @@ func drawHints(term *termlib.Terminal, lay playerLayout, state *playerState) {
 }
 
 // advanceQueue moves to the next track and starts playing it.
-func advanceQueue(state *playerState, engine *AudioEngine) {
+// Returns true if a new track was started, false if the queue is exhausted.
+func advanceQueue(state *playerState, engine *AudioEngine) bool {
 	if len(state.queue) == 0 {
-		return
+		return false
 	}
 	next := state.queueIdx + 1
 	if next >= len(state.queue) {
-		return
+		return false
 	}
 	state.queueIdx = next
 	scrollQueueToVisible(state)
 	engine.Play(state.queue[state.queueIdx]) //nolint — playback errors shown by beep
+	return true
 }
 
 // retreatQueue moves to the previous track and starts playing it.
