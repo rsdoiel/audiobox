@@ -3,6 +3,8 @@
 
 ## Bugs
 
+- [ ] When quitting player the cursor need to be turned back on.
+
 ## Next
 
 - [ ] Search results need to show album and artist info, for individual titles it should show the album and artist info too
