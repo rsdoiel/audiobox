@@ -1,3 +1,5 @@
+//go:build cgo
+
 // audio.go — beep-based audio engine for the TUI player.
 // Copyright (C) 2025 R. S. Doiel
 package audiobox

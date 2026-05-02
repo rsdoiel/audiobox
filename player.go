@@ -1,3 +1,5 @@
+//go:build cgo
+
 // player.go — terminal UI audio player built on termlib and AudioEngine.
 // Copyright (C) 2025 R. S. Doiel
 package audiobox
