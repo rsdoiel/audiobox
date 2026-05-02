@@ -11,7 +11,7 @@ authors:
 
 
 repository_code: https://github.com/rsdoiel/audiobox
-version: 0.0.1
+version: 0.0.2
 license_url: https://www.gnu.org/licenses/agpl-3.0.txt
 
 programming_language:
@@ -19,16 +19,16 @@ programming_language:
   - TypeScript
 
 
-
+date_released: 2026-05-02
 ---
 
 About this software
 ===================
 
-## audiobox 0.0.1
+## audiobox 0.0.2
 
-- You can listen to music with audiobox via TUI.
-- Implemeneted new actions, player provides a TUI play, server provides a Web UI
+- Web UI will intialize on first run
+- TUI display bugs fixed
 
 ### Authors
 

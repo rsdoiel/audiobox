@@ -445,7 +445,8 @@ func computeLayout(term *termlib.Terminal) playerLayout {
 		queueH = 3
 	}
 	const nowH = 4
-	browseH := h - 1 - nowH - 2 - queueH // 1=tabrow, 2=separators
+	// Rows accounted for: 1 tabrow + browseH + 1 sep + nowH + 1 sep + queueH + 1 hintsrow
+	browseH := h - 1 - nowH - 2 - queueH - 1
 	if browseH < 2 {
 		browseH = 2
 	}
@@ -655,14 +656,14 @@ func drawHints(term *termlib.Terminal, lay playerLayout, state *playerState) {
 
 	if state.view == viewSearchInput {
 		term.SetFgColor(termlib.Yellow)
-		term.Print("Search: " + state.searchQuery)
+		term.Print(termlib.Truncate("Search: "+state.searchQuery, lay.width))
 		term.ResetStyle()
 		term.ShowCursor()
 		return
 	}
 	if state.statusMsg != "" {
 		term.SetFgColor(termlib.Green)
-		term.Print(state.statusMsg)
+		term.Print(termlib.Truncate(state.statusMsg, lay.width))
 		term.ResetStyle()
 		state.statusMsg = ""
 		return
@@ -670,9 +671,9 @@ func drawHints(term *termlib.Terminal, lay playerLayout, state *playerState) {
 	term.SetFgColor(termlib.Cyan)
 	switch state.focus {
 	case focusBrowse:
-		term.Print("[↑↓] move  [PgUp/Dn] page  [Home/End]  [←→] tabs  [Enter] play  [a] add  [Tab]→queue  [/] search  [q] quit")
+		term.Print(termlib.Truncate("[↑↓] move  [PgUp/Dn] page  [Home/End]  [←→] tabs  [Enter] play  [a] add  [Tab]→queue  [/] search  [q] quit", lay.width))
 	case focusQueue:
-		term.Print("[↑↓] move  [PgUp/Dn] page  [Home/End]  [Enter] jump  [Tab]→browse  [Spc] pause  [n/p] next/prev  [q] quit")
+		term.Print(termlib.Truncate("[↑↓] move  [PgUp/Dn] page  [Home/End]  [Enter] jump  [Tab]→browse  [Spc] pause  [n/p] next/prev  [q] quit", lay.width))
 	}
 	term.ResetStyle()
 }

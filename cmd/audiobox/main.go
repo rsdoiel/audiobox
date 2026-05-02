@@ -396,7 +396,7 @@ func main() {
 
 	// No-argument default: start the web server.
 	if flag.NArg() < 1 {
-		col, err := audiobox.LoadAudiobox()
+		col, err := loadOrInit()
 		if err != nil {
 			log.Fatalf("error opening collection: %v", err)
 		}
@@ -413,7 +413,15 @@ func main() {
 		handleInit(args)
 	case "help":
 		handleHelp(appName, args)
-	case "scan", "sweep", "list", "search", "show", "delete", "server", "player":
+	case "server":
+		// server auto-inits on first run just like the no-arg default.
+		col, err := loadOrInit()
+		if err != nil {
+			log.Fatalf("error opening collection: %v", err)
+		}
+		defer col.Close()
+		handleServer(col)
+	case "scan", "sweep", "list", "search", "show", "delete", "player":
 		col, err := audiobox.LoadAudiobox()
 		if err != nil {
 			log.Fatalf("error opening collection: %v", err)
@@ -432,8 +440,6 @@ func main() {
 			handleShow(col, args, format)
 		case "delete":
 			handleDelete(col, args)
-		case "server":
-			handleServer(col)
 		case "player":
 			handlePlayer(col)
 		}
@@ -442,6 +448,28 @@ func main() {
 		fmt.Println(audiobox.FmtHelp(helpGeneral, appName, audiobox.Version, audiobox.ReleaseDate, audiobox.ReleaseHash))
 		os.Exit(1)
 	}
+}
+
+// --------------------------------------------------------------------------
+// Helpers
+// --------------------------------------------------------------------------
+
+// loadOrInit tries to load the standard ~/Audio collection. If the config
+// file or directory is missing it runs InitAudiobox() to create it first,
+// then returns the initialised collection. This allows `audiobox` and
+// `audiobox server` to work on a fresh system without requiring a prior
+// `audiobox init` step.
+func loadOrInit() (*audiobox.Collection, error) {
+	col, err := audiobox.LoadAudiobox()
+	if err == nil {
+		return col, nil
+	}
+	// Config or directory missing — auto-init and try again.
+	col, err = audiobox.InitAudiobox()
+	if err != nil {
+		return nil, fmt.Errorf("auto-init failed: %w", err)
+	}
+	return col, nil
 }
 
 // --------------------------------------------------------------------------

@@ -12,7 +12,8 @@
     }
   ],
   "dateCreated": "2026-04-24",
-  "dateModified": "2026-04-29",
+  "dateModified": "2026-05-02",
+  "datePublished": "2026-05-02",
   "description": "audiobox is a go module that for managing audio metadata in an SQLite3 database. It uses \"https://github.com/dhowden/tag\" module to extract metadata that may be found in the audio file itself.\n\nThis software is for Lourdes.",
   "name": "audiobox",
   "license": "https://www.gnu.org/licenses/agpl-3.0.txt",
@@ -30,10 +31,10 @@
     "Deno >= 2.4.0",
     "FFmpeg >= 6.0"
   ],
-  "version": "0.0.1",
+  "version": "0.0.2",
   "developmentStatus": "concept",
   "issueTracker": "https://github.com/rsdoiel/audiobox/issues",
-  "releaseNotes": "- You can listen to music with audiobox via TUI.\n- Implemeneted new actions, player provides a TUI play, server provides a Web UI",
+  "releaseNotes": "- Web UI will intialize on first run\n- TUI display bugs fixed",
   "copyrightYear": 2026,
   "copyrightHolder": "R. S. Doiel"
 }
