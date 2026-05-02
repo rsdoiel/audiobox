@@ -8,12 +8,12 @@ This software is for Lourdes.
 
 ## Release Notes
 
-- version: 0.0.1
+- version: 0.0.2
 - status: concept
+- released: 2026-05-02
 
-
-- You can listen to music with audiobox via TUI.
-- Implemeneted new actions, player provides a TUI play, server provides a Web UI
+- Web UI will intialize on first run
+- TUI display bugs fixed
 
 
 ### Authors
