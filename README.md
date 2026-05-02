@@ -4,6 +4,16 @@
 
 audiobox is a go module that for managing audio metadata in an SQLite3 database. It uses "https://github.com/dhowden/tag" module to extract metadata that may be found in the audio file itself.
 
+This software is for Lourdes.
+
+## Release Notes
+
+- version: 0.0.1
+- status: concept
+
+
+- You can listen to music with audiobox via TUI.
+- Implemeneted new actions, player provides a TUI play, server provides a Web UI
 
 
 ### Authors
@@ -21,6 +31,8 @@ audiobox is a go module that for managing audio metadata in an SQLite3 database.
 - CMTools >= 0.0.40
 - Pandoc >= 3.1
 - GNU Make >= 3
+- Deno >= 2.4.0
+- FFmpeg >= 6.0
 
 
 

@@ -3,7 +3,9 @@ cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
 type: software
 title: audiobox
-abstract: "audiobox is a go module that for managing audio metadata in an SQLite3 database. It uses "https://github.com/dhowden/tag" module to extract metadata that may be found in the audio file itself."
+abstract: "audiobox is a go module that for managing audio metadata in an SQLite3 database. It uses "https://github.com/dhowden/tag" module to extract metadata that may be found in the audio file itself.
+
+This software is for Lourdes."
 authors:
   - family-names: Doiel
     given-names: R. S.

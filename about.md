@@ -1,6 +1,8 @@
 ---
 title: audiobox
-abstract: "audiobox is a go module that for managing audio metadata in an SQLite3 database. It uses &quot;https://github.com/dhowden/tag&quot; module to extract metadata that may be found in the audio file itself."
+abstract: "audiobox is a go module that for managing audio metadata in an SQLite3 database. It uses &quot;https://github.com/dhowden/tag&quot; module to extract metadata that may be found in the audio file itself.
+
+This software is for Lourdes."
 authors:
   - family_name: Doiel
     given_name: R. S.
@@ -38,6 +40,8 @@ About this software
 
 
 audiobox is a go module that for managing audio metadata in an SQLite3 database. It uses &quot;https://github.com/dhowden/tag&quot; module to extract metadata that may be found in the audio file itself.
+
+This software is for Lourdes.
 
 - License: <https://www.gnu.org/licenses/agpl-3.0.txt>
 - GitHub: <https://github.com/rsdoiel/audiobox>
