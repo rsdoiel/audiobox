@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en-US">
+<head>
+    <title>audioinfo</title>
+    <link rel="stylesheet" href="/css/site.css">
+</head>
+<body>
+<nav>
+<ul>
+    <li><a href="/">Home</a></li>
+    <li><a href="index.html">README</a></li>
+    <li><a href="LICENSE">LICENSE</a></li>
+    <li><a href="INSTALL.html">INSTALL</a></li>
+    <li><a href="user_manual.html">User Manual</a></li>
+    <li><a href="about.html">About</a></li>
+    <li><a href="search.html">Search</a></li>
+    <li><a href="https://github.com/rsdoiel/audioinfo">GitHub</a></li>
+</ul>
+</nav>
+<section>
+<h1 id="action-items">Action Items</h1>
+<h2 id="bugs">Bugs</h2>
+<ul class="task-list">
+<li><label><input type="checkbox" />When quitting player the cursor need
+to be turned back on.</label></li>
+</ul>
+<h2 id="next">Next</h2>
+<ul class="task-list">
+<li><label><input type="checkbox" />Search results need to show album
+and artist info, for individual titles it should show the album and
+artist info too</label>
+<ul class="task-list">
+<li><label><input type="checkbox" />selecting a an album or artist entry
+should put the whole list of the album or artist in the pay
+queue</label></li>
+</ul></li>
+<li><label><input type="checkbox" />I should be able to do a shuffle on
+the queue after getting the content I want to play into it</label></li>
+<li><label><input type="checkbox" />The queue to should an estimate of
+run time for entries</label></li>
+<li><label><input type="checkbox" checked="" />Add a sweep action that
+removes entries in the database if they are no longer a corresponding
+digital object at the path indicated</label></li>
+<li><label><input type="checkbox" />Scan show have a progress indicator
+and report the number of items added like sweep does.</label></li>
+<li><label><input type="checkbox" />Restructure the directory
+layout</label>
+<ul class="task-list">
+<li><label><input type="checkbox" />The configuration file is called
+audio.yaml always</label></li>
+<li><label><input type="checkbox" />Use <code>~/Audio</code> as the base
+directory for app, it will hold audio.yaml and audio.db along with
+directories holding audio files</label></li>
+<li><label><input type="checkbox" /><code>audiobox init</code> will
+initialize, fix or upgrade an audiobox deployment</label>
+<ul class="task-list">
+<li><label><input type="checkbox" />create the <code>~/Audio</code>
+directory if it does not exist</label></li>
+<li><label><input type="checkbox" />create a default
+<code>audio.yaml</code> in <code>~/Audio</code> if one doesn’t
+exist</label></li>
+<li><label><input type="checkbox" />create an audio.db file if one
+doesn’t exist</label></li>
+<li><label><input type="checkbox" />run scan and sweep to cleanup the
+audio.db file content</label></li>
+</ul></li>
+<li><label><input type="checkbox" />Come up with a sane path
+structure</label>
+<ul class="task-list">
+<li><label><input type="checkbox" />Think about something like
+<code>&lt;category&gt;/&lt;artist&gt;/&lt;album&gt;/&lt;titles&gt;.&lt;ext&gt;</code></label>
+<ul class="task-list">
+<li><label><input type="checkbox" />Initial categories Music,
+SpokenWord, Podcast, Books, AudioTheater</label></li>
+<li><label><input type="checkbox" />artist can be a person or group or
+group with collaborators (still listed under the group or primary
+creator)</label></li>
+</ul></li>
+</ul></li>
+<li><label><input type="checkbox" />Directory layout becomes an
+expression of the metadata and can be one of the navigable items on TUI
+or Web UI</label></li>
+</ul></li>
+</ul>
+</section>
+</body>
+</html>
