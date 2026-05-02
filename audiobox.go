@@ -962,6 +962,26 @@ func (c *Collection) Sweep() (int, error) {
 	return len(stale), nil
 }
 
+/** Count returns the total number of records in the collection.
+ *
+ * Returns:
+ *   int  — number of rows in audio_files
+ *   error — non-nil on database failure
+ *
+ * Example:
+ *   n, err := col.Count()
+ */
+func (c *Collection) Count() (int, error) {
+	if !c.isOpen {
+		return 0, fmt.Errorf("collection is not open")
+	}
+	var n int
+	if err := c.db.QueryRow("SELECT COUNT(*) FROM audio_files").Scan(&n); err != nil {
+		return 0, fmt.Errorf("count: %w", err)
+	}
+	return n, nil
+}
+
 // deslugify converts a directory-name slug into a human-readable album title.
 // Hyphens and underscores are treated as space placeholders; other characters
 // (including parentheses, apostrophes, digits) are preserved as-is.

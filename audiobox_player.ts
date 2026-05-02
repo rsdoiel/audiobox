@@ -1,4 +1,4 @@
-import type { Agent, AudioInfo } from "./audiobox_api.ts";
+import type { Agent, AudioInfo, CollectionStatus } from "./audiobox_api.ts";
 import { AudioInfoAPI } from "./audiobox_api.ts";
 
 // ---------------------------------------------------------------------------
@@ -80,8 +80,51 @@ const STYLES = `
   border: 1px solid #ccc;
   border-radius: 6px;
   overflow: hidden;
-  max-width: 640px;
+  max-width: 680px;
 }
+
+/* ---- header bar ---- */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: #222;
+  color: #eee;
+}
+.header-title { font-weight: 600; font-size: 15px; }
+.shutdown-btn {
+  padding: 4px 10px;
+  border: 1px solid #555;
+  border-radius: 4px;
+  background: transparent;
+  color: #eee;
+  cursor: pointer;
+  font-size: 13px;
+}
+.shutdown-btn:hover { background: #c0392b; border-color: #c0392b; }
+
+/* ---- overlay screens (offline / init) ---- */
+.screen {
+  padding: 32px 24px;
+  text-align: center;
+  background: #fff;
+}
+.screen h2 { margin: 0 0 12px; font-size: 18px; }
+.screen p  { margin: 0 0 16px; color: #555; font-size: 13px; }
+.screen-btn {
+  padding: 8px 20px;
+  border: none;
+  border-radius: 4px;
+  background: #333;
+  color: #fff;
+  cursor: pointer;
+  font-size: 14px;
+}
+.screen-btn:hover { background: #555; }
+.screen-btn + .screen-btn { margin-left: 8px; }
+
+/* ---- browse panel ---- */
 .browse-panel { padding: 10px; border-bottom: 1px solid #ddd; }
 .tabs { display: flex; gap: 4px; margin-bottom: 8px; }
 .tab {
@@ -99,16 +142,24 @@ const STYLES = `
   background: #fff; cursor: pointer; font-size: 13px;
 }
 .list-panel {
-  margin-top: 8px; max-height: 180px; overflow-y: auto;
+  margin-top: 8px; max-height: 200px; overflow-y: auto;
   border: 1px solid #e8e8e8; border-radius: 4px; background: #fff;
 }
 .list-item {
   padding: 6px 10px; cursor: pointer; border-bottom: 1px solid #f0f0f0;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .list-item:hover { background: #f0f0f0; }
 .list-item:last-child { border-bottom: none; }
+.list-item-title {
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px;
+}
+.list-item-sub {
+  font-size: 11px; color: #888; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; margin-top: 1px;
+}
 .list-empty { padding: 10px; color: #888; text-align: center; font-style: italic; }
+
+/* ---- now-playing panel ---- */
 .now-playing {
   padding: 10px; background: #fff; border-bottom: 1px solid #ddd;
 }
@@ -122,6 +173,12 @@ const STYLES = `
   background: #fff; cursor: pointer; font-size: 16px; line-height: 1;
 }
 .ctrl-btn:disabled { opacity: 0.4; cursor: default; }
+.delete-track-btn {
+  margin-left: auto; padding: 3px 8px; border: 1px solid #e74c3c;
+  border-radius: 4px; background: #fff; color: #e74c3c;
+  cursor: pointer; font-size: 12px;
+}
+.delete-track-btn:hover { background: #e74c3c; color: #fff; }
 .progress {
   display: flex; align-items: center; gap: 6px;
   margin-bottom: 6px; font-size: 12px; color: #555;
@@ -129,7 +186,9 @@ const STYLES = `
 .seek-bar { flex: 1; cursor: pointer; }
 .volume-row { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #555; }
 .volume-bar { width: 80px; cursor: pointer; }
-.queue-panel { padding: 6px 10px 10px; }
+
+/* ---- queue panel ---- */
+.queue-panel { padding: 6px 10px 10px; border-bottom: 1px solid #ddd; }
 .queue-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
 .queue-title { font-weight: 600; font-size: 12px; text-transform: uppercase; color: #888; }
 .toggle-queue-btn {
@@ -147,6 +206,30 @@ const STYLES = `
 .queue-item:hover { background: #f0f0f0; }
 .queue-item.current { background: #e8f0fe; font-weight: 600; }
 .queue-item:last-child { border-bottom: none; }
+
+/* ---- library panel ---- */
+.library-panel { padding: 8px 10px 10px; }
+.library-header {
+  display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;
+}
+.library-title { font-weight: 600; font-size: 12px; text-transform: uppercase; color: #888; }
+.toggle-library-btn {
+  font-size: 11px; padding: 2px 6px; border: 1px solid #ccc;
+  border-radius: 3px; background: #fff; cursor: pointer;
+}
+.library-body { display: flex; flex-direction: column; gap: 6px; }
+.library-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.lib-btn {
+  padding: 4px 12px; border: 1px solid #ccc; border-radius: 4px;
+  background: #fff; cursor: pointer; font-size: 12px;
+}
+.lib-btn:hover { background: #f0f0f0; }
+.lib-btn:disabled { opacity: 0.5; cursor: default; }
+.lib-status {
+  font-size: 11px; color: #555;
+}
+.lib-status.error { color: #c0392b; }
+.lib-status.ok    { color: #27ae60; }
 `;
 
 /** PLAYER_TEMPLATE is the inner HTML injected into the component's shadow root.
@@ -154,11 +237,17 @@ const STYLES = `
  */
 export const PLAYER_TEMPLATE = `
 <style>${STYLES}</style>
+
+<div class="header">
+  <span class="header-title">audiobox</span>
+  <button class="shutdown-btn" title="Shut down the audiobox server">⏻ Power Off</button>
+</div>
+
 <div class="browse-panel">
   <div class="tabs">
-    <button class="tab active" data-tab="titles">Titles</button>
-    <button class="tab" data-tab="albums">Albums</button>
+    <button class="tab active" data-tab="albums">Albums</button>
     <button class="tab" data-tab="artists">Artists</button>
+    <button class="tab" data-tab="titles">Titles</button>
   </div>
   <div class="search-bar">
     <input type="search" placeholder="Search..." />
@@ -168,6 +257,7 @@ export const PLAYER_TEMPLATE = `
     <div class="list-empty">Select a tab to browse</div>
   </div>
 </div>
+
 <div class="now-playing hidden">
   <div class="track-title"></div>
   <div class="track-sub"></div>
@@ -176,6 +266,7 @@ export const PLAYER_TEMPLATE = `
     <button class="ctrl-btn prev-btn" title="Previous">⏮</button>
     <button class="ctrl-btn play-pause-btn" title="Play">▶</button>
     <button class="ctrl-btn next-btn" title="Next">⏭</button>
+    <button class="delete-track-btn" title="Remove from collection">🗑 Delete</button>
   </div>
   <div class="progress">
     <span class="current-time">0:00</span>
@@ -188,6 +279,7 @@ export const PLAYER_TEMPLATE = `
   </div>
   <audio class="audio-el"></audio>
 </div>
+
 <div class="queue-panel">
   <div class="queue-header">
     <span class="queue-title">Queue</span>
@@ -195,6 +287,23 @@ export const PLAYER_TEMPLATE = `
   </div>
   <div class="queue-list">
     <div class="list-empty">No tracks queued</div>
+  </div>
+</div>
+
+<div class="library-panel">
+  <div class="library-header">
+    <span class="library-title">Library</span>
+    <button class="toggle-library-btn">Hide</button>
+  </div>
+  <div class="library-body">
+    <div class="library-row">
+      <button class="lib-btn scan-btn">Scan</button>
+      <span class="lib-status scan-status"></span>
+    </div>
+    <div class="library-row">
+      <button class="lib-btn sweep-btn">Sweep</button>
+      <span class="lib-status sweep-status"></span>
+    </div>
   </div>
 </div>
 `;
@@ -219,8 +328,11 @@ const _Base = getBaseClass();
  * Usage:
  *   &lt;audiobox-player api-url="http://localhost:8010"&gt;&lt;/audiobox-player&gt;
  *
- * The component renders a browse panel (Titles / Albums / Artists tabs and a search box),
- * a now-playing panel that activates when a track is selected, and a collapsible queue panel.
+ * On connect the component checks /api/status. If the service is offline it shows
+ * a retry screen. If the collection is not yet initialized it shows a setup screen.
+ * Once connected, the component renders a browse panel (Albums / Artists / Titles tabs
+ * and a search box), a now-playing panel, a collapsible queue panel, and a library
+ * management panel with Scan and Sweep controls.
  */
 export class AudioInfoPlayer extends _Base {
   static get observedAttributes(): string[] {
@@ -233,7 +345,10 @@ export class AudioInfoPlayer extends _Base {
   private currentIndex = -1;
   private contextLabel = "";
   private queueVisible = true;
+  private libraryVisible = true;
   private seekDragging = false;
+  private scanPollTimer = 0;
+  private sweepPollTimer = 0;
 
   constructor() {
     super();
@@ -252,7 +367,7 @@ export class AudioInfoPlayer extends _Base {
   }
 
   connectedCallback(): void {
-    this._loadTab("titles");
+    this._checkStatus();
   }
 
   private get shadow(): ShadowRoot {
@@ -263,13 +378,88 @@ export class AudioInfoPlayer extends _Base {
     return this.shadow.querySelector<T>(sel)!;
   }
 
+  // ---- startup: status check + init screen --------------------------------
+
+  private async _checkStatus(): Promise<void> {
+    try {
+      const s: CollectionStatus = await this.api.status();
+      if (!s.initialized) {
+        this._showInitScreen();
+      } else {
+        this._loadTab("albums");
+      }
+    } catch (_e) {
+      this._showOfflineScreen();
+    }
+  }
+
+  private _showOfflineScreen(): void {
+    this._overlayHTML(`
+      <div class="screen">
+        <h2>Service Offline</h2>
+        <p>The audiobox server is not reachable.<br>
+           Run <code>audiobox</code> in a terminal to start it.</p>
+        <button class="screen-btn retry-btn">Retry</button>
+      </div>
+    `);
+    this.shadow.querySelector(".retry-btn")?.addEventListener("click", () => {
+      this._clearOverlay();
+      this._checkStatus();
+    });
+  }
+
+  private _showInitScreen(): void {
+    this._overlayHTML(`
+      <div class="screen">
+        <h2>Welcome to audiobox</h2>
+        <p>Your collection has not been set up yet.<br>
+           Click Initialize to create the standard ~/Audio directory layout.</p>
+        <button class="screen-btn init-btn">Initialize Collection</button>
+      </div>
+    `);
+    this.shadow.querySelector(".init-btn")?.addEventListener("click", async () => {
+      const btn = this.shadow.querySelector<HTMLButtonElement>(".init-btn")!;
+      btn.disabled = true;
+      btn.textContent = "Initializing…";
+      try {
+        await this.api.init();
+        this._clearOverlay();
+        this._loadTab("albums");
+      } catch (e) {
+        btn.disabled = false;
+        btn.textContent = "Initialize Collection";
+        const p = this.shadow.querySelector(".screen p")!;
+        p.textContent = `Error: ${String(e)}`;
+      }
+    });
+  }
+
+  private _overlayHTML(html: string): void {
+    // Insert overlay after the header, replacing the browse panel temporarily.
+    const browsePanel = this.qs<HTMLElement>(".browse-panel");
+    let overlay = this.shadow.querySelector<HTMLElement>(".overlay");
+    if (!overlay) {
+      overlay = document.createElement("div");
+      overlay.className = "overlay";
+      browsePanel.parentNode!.insertBefore(overlay, browsePanel);
+    }
+    overlay.innerHTML = html;
+    browsePanel.style.display = "none";
+  }
+
+  private _clearOverlay(): void {
+    this.shadow.querySelector(".overlay")?.remove();
+    const browsePanel = this.qs<HTMLElement>(".browse-panel");
+    browsePanel.style.display = "";
+  }
+
   // ---- data loading -------------------------------------------------------
 
   private async _loadTab(tab: string): Promise<void> {
     this.shadow.querySelectorAll<HTMLButtonElement>(".tab").forEach((b) => {
       b.classList.toggle("active", b.dataset.tab === tab);
     });
-    this._setListContent('<div class="list-empty">Loading...</div>');
+    this._setListContent('<div class="list-empty">Loading…</div>');
     try {
       let items: string[] = [];
       if (tab === "albums") items = await this.api.listAlbums();
@@ -283,7 +473,7 @@ export class AudioInfoPlayer extends _Base {
 
   private async _runSearch(q: string): Promise<void> {
     if (!q.trim()) return;
-    this._setListContent('<div class="list-empty">Searching...</div>');
+    this._setListContent('<div class="list-empty">Searching…</div>');
     try {
       const results = await this.api.search(q.trim());
       this._renderAudioList(results, `Search: ${q.trim()}`, false);
@@ -307,7 +497,9 @@ export class AudioInfoPlayer extends _Base {
       items
         .map(
           (item) =>
-            `<div class="list-item" data-browse-tab="${this._escAttr(tab)}" data-browse-item="${this._escAttr(item)}">${this._escHtml(item)}</div>`,
+            `<div class="list-item" data-browse-tab="${this._escAttr(tab)}" data-browse-item="${this._escAttr(item)}">` +
+            `<div class="list-item-title">${this._escHtml(item)}</div>` +
+            `</div>`,
         )
         .join(""),
     );
@@ -323,10 +515,15 @@ export class AudioInfoPlayer extends _Base {
     }
     this._setListContent(
       tracks
-        .map(
-          (t, i) =>
-            `<div class="list-item" data-queue-index="${i}">${this._escHtml(t.Name || "(untitled)")}</div>`,
-        )
+        .map((t, i) => {
+          const sub = [formatArtists(t.ByArtist), t.InAlbum].filter(Boolean).join(" · ");
+          return (
+            `<div class="list-item" data-queue-index="${i}">` +
+            `<div class="list-item-title">${this._escHtml(t.Name || "(untitled)")}</div>` +
+            (sub ? `<div class="list-item-sub">${this._escHtml(sub)}</div>` : "") +
+            `</div>`
+          );
+        })
         .join(""),
     );
     this._updateQueuePanel();
@@ -353,6 +550,8 @@ export class AudioInfoPlayer extends _Base {
     this.qs(".context-info").textContent = this.contextLabel
       ? `From: ${this.contextLabel}`
       : "";
+    const deleteBtn = this.qs<HTMLButtonElement>(".delete-track-btn");
+    deleteBtn.dataset.trackId = info.ID;
   }
 
   private _refreshPlayState(playing: boolean): void {
@@ -364,10 +563,13 @@ export class AudioInfoPlayer extends _Base {
 
   private _updateQueuePanel(): void {
     const list = this.qs(".queue-list");
+    const title = this.qs(".queue-title");
     if (this.queue.length === 0) {
       list.innerHTML = '<div class="list-empty">No tracks queued</div>';
+      title.textContent = "Queue";
       return;
     }
+    title.textContent = `Queue (${this.queue.length})`;
     list.innerHTML = this.queue
       .map((t, i) => {
         const cls = i === this.currentIndex ? " current" : "";
@@ -422,16 +624,14 @@ export class AudioInfoPlayer extends _Base {
       const el = (e.target as Element).closest<HTMLElement>(".list-item");
       if (!el) return;
       if (el.dataset.browseTab) {
-        // String list item: load all tracks for this album/artist/title and auto-play
         const q = buildBrowseQuery(el.dataset.browseTab, el.dataset.browseItem ?? "");
         const label = `${el.dataset.browseTab}: ${el.dataset.browseItem}`;
-        this._setListContent('<div class="list-empty">Loading...</div>');
+        this._setListContent('<div class="list-empty">Loading…</div>');
         this.api
           .search(q)
           .then((results) => this._renderAudioList(results, label, true))
           .catch((err) => this._setListContent(`<div class="list-empty">${this._escHtml(String(err))}</div>`));
       } else if (el.dataset.queueIndex !== undefined) {
-        // Track result: play the selected track
         this._playIndex(parseInt(el.dataset.queueIndex, 10));
       }
     });
@@ -460,19 +660,41 @@ export class AudioInfoPlayer extends _Base {
       if (this.currentIndex < this.queue.length - 1) this._playIndex(this.currentIndex + 1);
     });
 
+    // Delete current track
+    this.qs(".delete-track-btn").addEventListener("click", async () => {
+      const btn = this.qs<HTMLButtonElement>(".delete-track-btn");
+      const id = btn.dataset.trackId;
+      if (!id) return;
+      const name = this.qs(".track-title").textContent || "this track";
+      if (!confirm(`Remove "${name}" from the collection?\n\nThe audio file on disk will not be deleted.`)) return;
+      try {
+        await this.api.deleteRecord(id);
+        // Remove from queue and advance if needed.
+        this.queue.splice(this.currentIndex, 1);
+        if (this.queue.length === 0) {
+          this.currentIndex = -1;
+          this.audioEl.pause();
+          this.audioEl.src = "";
+          this.qs(".now-playing").classList.add("hidden");
+        } else {
+          const nextIndex = Math.min(this.currentIndex, this.queue.length - 1);
+          this._playIndex(nextIndex);
+        }
+        this._updateQueuePanel();
+      } catch (e) {
+        alert(`Delete failed: ${String(e)}`);
+      }
+    });
+
     // Seek bar
     const seekBar = this.qs<HTMLInputElement>(".seek-bar");
-    seekBar.addEventListener("mousedown", () => {
-      this.seekDragging = true;
-    });
+    seekBar.addEventListener("mousedown", () => { this.seekDragging = true; });
     seekBar.addEventListener("input", () => {
       if (!isNaN(this.audioEl.duration)) {
         this.audioEl.currentTime = (parseFloat(seekBar.value) / 100) * this.audioEl.duration;
       }
     });
-    seekBar.addEventListener("mouseup", () => {
-      this.seekDragging = false;
-    });
+    seekBar.addEventListener("mouseup", () => { this.seekDragging = false; });
 
     // Volume
     const volBar = this.qs<HTMLInputElement>(".volume-bar");
@@ -481,13 +703,148 @@ export class AudioInfoPlayer extends _Base {
     });
 
     // Queue toggle
-    const toggleBtn = this.qs<HTMLButtonElement>(".toggle-queue-btn");
+    const toggleQueueBtn = this.qs<HTMLButtonElement>(".toggle-queue-btn");
     const queueList = this.qs<HTMLElement>(".queue-list");
-    toggleBtn.addEventListener("click", () => {
+    toggleQueueBtn.addEventListener("click", () => {
       this.queueVisible = !this.queueVisible;
       queueList.style.display = this.queueVisible ? "" : "none";
-      toggleBtn.textContent = this.queueVisible ? "Hide" : "Show";
+      toggleQueueBtn.textContent = this.queueVisible ? "Hide" : "Show";
     });
+
+    // Library toggle
+    const toggleLibraryBtn = this.qs<HTMLButtonElement>(".toggle-library-btn");
+    const libraryBody = this.qs<HTMLElement>(".library-body");
+    toggleLibraryBtn.addEventListener("click", () => {
+      this.libraryVisible = !this.libraryVisible;
+      libraryBody.style.display = this.libraryVisible ? "" : "none";
+      toggleLibraryBtn.textContent = this.libraryVisible ? "Hide" : "Show";
+    });
+
+    // Scan
+    this.qs(".scan-btn").addEventListener("click", () => this._startScan());
+
+    // Sweep
+    this.qs(".sweep-btn").addEventListener("click", () => this._startSweep());
+
+    // Shutdown
+    this.qs(".shutdown-btn").addEventListener("click", () => this._requestShutdown());
+  }
+
+  // ---- library actions ----------------------------------------------------
+
+  private _startScan(): void {
+    const btn = this.qs<HTMLButtonElement>(".scan-btn");
+    const status = this.qs<HTMLElement>(".scan-status");
+    btn.disabled = true;
+    status.className = "lib-status";
+    status.textContent = "Starting…";
+    this.api.startScan()
+      .then(() => {
+        status.textContent = "Scanning…";
+        this._pollScan();
+      })
+      .catch((e) => {
+        btn.disabled = false;
+        status.className = "lib-status error";
+        status.textContent = String(e);
+      });
+  }
+
+  private _pollScan(): void {
+    if (this.scanPollTimer) clearInterval(this.scanPollTimer);
+    this.scanPollTimer = setInterval(async () => {
+      try {
+        const s = await this.api.scanStatus();
+        const btn = this.qs<HTMLButtonElement>(".scan-btn");
+        const status = this.qs<HTMLElement>(".scan-status");
+        if (s.status === "completed") {
+          clearInterval(this.scanPollTimer);
+          btn.disabled = false;
+          status.className = "lib-status ok";
+          status.textContent = "Scan complete";
+          // Refresh the current browse tab.
+          const activeTab = this.shadow.querySelector<HTMLButtonElement>(".tab.active");
+          if (activeTab?.dataset.tab) this._loadTab(activeTab.dataset.tab);
+        } else if (s.status === "error") {
+          clearInterval(this.scanPollTimer);
+          btn.disabled = false;
+          status.className = "lib-status error";
+          status.textContent = `Error: ${s.error ?? "unknown"}`;
+        } else {
+          status.textContent = "Scanning…";
+        }
+      } catch (_e) {
+        // transient network error — keep polling
+      }
+    }, 1500) as unknown as number;
+  }
+
+  private _startSweep(): void {
+    const btn = this.qs<HTMLButtonElement>(".sweep-btn");
+    const status = this.qs<HTMLElement>(".sweep-status");
+    btn.disabled = true;
+    status.className = "lib-status";
+    status.textContent = "Starting…";
+    this.api.startSweep()
+      .then(() => {
+        status.textContent = "Sweeping…";
+        this._pollSweep();
+      })
+      .catch((e) => {
+        btn.disabled = false;
+        status.className = "lib-status error";
+        status.textContent = String(e);
+      });
+  }
+
+  private _pollSweep(): void {
+    if (this.sweepPollTimer) clearInterval(this.sweepPollTimer);
+    this.sweepPollTimer = setInterval(async () => {
+      try {
+        const s = await this.api.sweepStatus();
+        const btn = this.qs<HTMLButtonElement>(".sweep-btn");
+        const status = this.qs<HTMLElement>(".sweep-status");
+        if (s.status === "completed") {
+          clearInterval(this.sweepPollTimer);
+          btn.disabled = false;
+          const n = s.records_removed ?? 0;
+          status.className = "lib-status ok";
+          status.textContent = `${n} stale record${n !== 1 ? "s" : ""} removed`;
+        } else if (s.status === "error") {
+          clearInterval(this.sweepPollTimer);
+          btn.disabled = false;
+          status.className = "lib-status error";
+          status.textContent = `Error: ${s.error ?? "unknown"}`;
+        } else {
+          status.textContent = "Sweeping…";
+        }
+      } catch (_e) {
+        // transient network error — keep polling
+      }
+    }, 1500) as unknown as number;
+  }
+
+  private async _requestShutdown(): Promise<void> {
+    if (!confirm("Shut down the audiobox server?\n\nThe web UI will no longer be accessible.")) return;
+    try {
+      await this.api.shutdown();
+    } catch (_e) {
+      // Connection drop is expected as part of shutdown — ignore.
+    }
+    // Replace entire shadow content with a shutdown message.
+    this.shadowRoot!.innerHTML = `
+      <style>
+        :host { display: flex; align-items: center; justify-content: center;
+                min-height: 200px; font-family: system-ui, sans-serif; }
+        .msg { text-align: center; color: #555; }
+        .msg h2 { margin: 0 0 8px; font-size: 18px; color: #1a1a1a; }
+        .msg p  { margin: 0; font-size: 13px; }
+      </style>
+      <div class="msg">
+        <h2>Server is shutting down</h2>
+        <p>You can close this tab.</p>
+      </div>
+    `;
   }
 
   // ---- private helpers ----------------------------------------------------

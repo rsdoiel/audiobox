@@ -108,7 +108,7 @@ Deno.test("PLAYER_TEMPLATE - has three tab buttons", () => {
   assertEquals(tabs.length, 3);
 });
 
-Deno.test("PLAYER_TEMPLATE - tab labels are Titles, Albums, Artists", () => {
+Deno.test("PLAYER_TEMPLATE - tab labels are Albums, Artists, Titles", () => {
   const doc = new DOMParser().parseFromString(
     `<html><body>${PLAYER_TEMPLATE}</body></html>`,
     "text/html",
@@ -116,7 +116,7 @@ Deno.test("PLAYER_TEMPLATE - tab labels are Titles, Albums, Artists", () => {
   const labels = Array.from(doc.querySelectorAll(".tab")).map((el) =>
     el.textContent?.trim()
   );
-  assertEquals(labels, ["Titles", "Albums", "Artists"]);
+  assertEquals(labels, ["Albums", "Artists", "Titles"]);
 });
 
 Deno.test("PLAYER_TEMPLATE - has search input and button", () => {

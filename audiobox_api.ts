@@ -38,7 +38,16 @@ export interface AudioInfo {
   ChecksumAlgorithm: string;
 }
 
-/** ScanStatus describes the current state of an async collection scan. */
+/** CollectionStatus describes the current state of the audiobox collection. */
+export interface CollectionStatus {
+  initialized: boolean;
+  version: string;
+  collection_name: string;
+  audio_dir: string;
+  track_count: number;
+}
+
+/** ScanStatus describes the current state of an async collection scan or sweep. */
 export interface ScanStatus {
   status: "idle" | "running" | "completed" | "error";
   started_at?: string;
@@ -46,7 +55,12 @@ export interface ScanStatus {
   error?: string;
 }
 
-/** ScanStarted is returned when POST /api/scan accepts the request. */
+/** SweepStatus extends ScanStatus with a records_removed count. */
+export interface SweepStatus extends ScanStatus {
+  records_removed?: number;
+}
+
+/** ScanStarted is returned when POST /api/scan or POST /api/sweep accepts the request. */
 export interface ScanStarted {
   status: string;
   started_at: string;
@@ -77,6 +91,42 @@ export class AudioInfoAPI {
       throw new Error(body.error ?? resp.statusText);
     }
     return resp.json() as Promise<T>;
+  }
+
+  private async postJSON<T>(path: string): Promise<T> {
+    const resp = await fetch(this.baseUrl + path, { method: "POST" });
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => ({ error: resp.statusText })) as {
+        error?: string;
+      };
+      throw new Error(body.error ?? resp.statusText);
+    }
+    return resp.json() as Promise<T>;
+  }
+
+  /** status returns the current collection status including whether it is initialized.
+   *
+   * Returns:
+   *   Promise<CollectionStatus> — status, version, track count, and audio_dir
+   *
+   * Example:
+   *   const s = await api.status();
+   *   if (s.track_count === 0) { ... }
+   */
+  async status(): Promise<CollectionStatus> {
+    return this.getJSON<CollectionStatus>("/api/status");
+  }
+
+  /** init initialises or upgrades the standard ~/Audio collection on the server.
+   *
+   * Returns:
+   *   Promise<{status: string, audio_dir: string}> — confirmation with audio_dir path
+   *
+   * Example:
+   *   await api.init();
+   */
+  async init(): Promise<{ status: string; audio_dir: string }> {
+    return this.postJSON<{ status: string; audio_dir: string }>("/api/init");
   }
 
   /** listAlbums returns all distinct album names in the collection.
@@ -145,6 +195,31 @@ export class AudioInfoAPI {
     return this.getJSON<AudioInfo>(`/api/show/${encodeURIComponent(id)}`);
   }
 
+  /** deleteRecord removes the record with the given UUID from the collection.
+   *
+   * Parameters:
+   *   id (string) — UUID of the record to delete
+   *
+   * Returns:
+   *   Promise<{status: string, id: string}> — confirmation; throws on 404
+   *
+   * Example:
+   *   await api.deleteRecord("550e8400-e29b-41d4-a716-446655440000");
+   */
+  async deleteRecord(id: string): Promise<{ status: string; id: string }> {
+    const resp = await fetch(
+      this.baseUrl + `/api/show/${encodeURIComponent(id)}`,
+      { method: "DELETE" },
+    );
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => ({ error: resp.statusText })) as {
+        error?: string;
+      };
+      throw new Error(body.error ?? resp.statusText);
+    }
+    return resp.json() as Promise<{ status: string; id: string }>;
+  }
+
   /** startScan initiates an asynchronous re-scan of the collection's music directory.
    *
    * Returns:
@@ -178,6 +253,38 @@ export class AudioInfoAPI {
     return this.getJSON<ScanStatus>("/api/scan/status");
   }
 
+  /** startSweep initiates an asynchronous sweep to remove stale database records.
+   *
+   * Returns:
+   *   Promise<ScanStarted> — confirmation with started_at timestamp; throws on 409 conflict
+   *
+   * Example:
+   *   const result = await api.startSweep();
+   */
+  async startSweep(): Promise<ScanStarted> {
+    const resp = await fetch(this.baseUrl + "/api/sweep", { method: "POST" });
+    if (resp.status !== 202) {
+      const body = await resp.json().catch(() => ({ error: resp.statusText })) as {
+        error?: string;
+      };
+      throw new Error(body.error ?? resp.statusText);
+    }
+    return resp.json() as Promise<ScanStarted>;
+  }
+
+  /** sweepStatus returns the current state of the async sweep.
+   *
+   * Returns:
+   *   Promise<SweepStatus> — idle | running | completed | error; completed includes records_removed
+   *
+   * Example:
+   *   const s = await api.sweepStatus();
+   *   if (s.status === "completed") console.log(s.records_removed);
+   */
+  async sweepStatus(): Promise<SweepStatus> {
+    return this.getJSON<SweepStatus>("/api/sweep/status");
+  }
+
   /** audioUrl returns the streaming URL for the audio file with the given UUID.
    * No network request is made.
    *
@@ -192,5 +299,23 @@ export class AudioInfoAPI {
    */
   audioUrl(id: string): string {
     return `${this.baseUrl}/api/audio/${encodeURIComponent(id)}`;
+  }
+
+  /** shutdown requests the server to gracefully stop.
+   *
+   * Returns:
+   *   Promise<{status: string}> — acknowledgement before the server exits
+   *
+   * Example:
+   *   await api.shutdown();
+   */
+  async shutdown(): Promise<{ status: string }> {
+    const resp = await fetch(this.baseUrl + "/api/shutdown", { method: "POST" });
+    // Server may close the connection before sending a full response; treat any
+    // network error here as expected and return a synthetic acknowledgement.
+    if (!resp.ok) {
+      return { status: "shutting down" };
+    }
+    return resp.json().catch(() => ({ status: "shutting down" })) as Promise<{ status: string }>;
   }
 }

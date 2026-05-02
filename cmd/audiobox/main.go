@@ -7,7 +7,10 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
+	"runtime"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
@@ -33,7 +36,10 @@ const helpGeneral = `
 
 SYNOPSIS
 
-  {app_name} [OPTIONS] ACTION [PARAMETERS]
+  {app_name} [OPTIONS] [ACTION [PARAMETERS]]
+
+  Running {app_name} with no arguments starts the web service and opens the
+  collection in the default browser.
 
 OPTIONS
 
@@ -50,6 +56,10 @@ OPTIONS
     output format for list/search/show: text, json, yaml, xml  (default: text)
 
 ACTIONS
+
+  (default)
+    Start the web service and open the collection in the default browser.
+    Equivalent to running "{app_name} server".
 
   init
     Initialise (or upgrade) the standard ~/Audio audiobox installation.
@@ -70,16 +80,20 @@ ACTIONS
     Remove the record with the given UUID from the collection.
 
   server
-    Start a localhost web server for the collection.
+    Start a localhost web server and open the default browser.
 
   sweep
     Remove database records whose audio files are no longer present on disk.
+
+  player
+    Start the terminal (TUI) player.
 
   help [ACTION]
     Display detailed help for an action.
 
 EXAMPLES
 
+  {app_name}
   {app_name} init
   {app_name} scan
   {app_name} sweep
@@ -87,6 +101,7 @@ EXAMPLES
   {app_name} search "Bach"
   {app_name} show 550e8400-e29b-41d4-a716-446655440000
   {app_name} delete 550e8400-e29b-41d4-a716-446655440000
+  {app_name} player
 
 SEE ALSO
 
@@ -257,16 +272,15 @@ const helpServer = `
 
 SYNOPSIS
 
-  {app_name} server
+  {app_name} [server]
 
 DESCRIPTION
 
-  Starts an HTTP server bound to 127.0.0.1 (default port 8010).
+  Starts an HTTP server bound to 127.0.0.1 (default port 8010) and opens
+  the collection in the operating system's default web browser.
 
-  Two types of content are served:
-
-    /api/*   JSON endpoints for querying and managing the collection
-    /*       Static files from the htdocs directory configured in ~/Audio/audio.yaml
+  "server" is the default action: running {app_name} with no arguments is
+  equivalent to "{app_name} server".
 
   The port, htdocs directory, and CORS policy are set in ~/Audio/audio.yaml:
 
@@ -275,25 +289,65 @@ DESCRIPTION
     corsOrigin (string)  Access-Control-Allow-Origin value
                          (default: "*"; set to "off" to disable)
 
-  POST /api/scan starts an asynchronous re-scan of audioDir.
-  Use GET /api/scan/status to poll for completion.
-  Press Ctrl-C to stop the server.
+  The web UI provides controls to scan, sweep, and shut down the server.
+  To stop the server from the command line press Ctrl-C.
 
 ENDPOINTS
 
+  GET  /api/status          collection status (initialized, track_count)
+  POST /api/init            initialise or upgrade the collection
   GET  /api/list/albums     list distinct album names
   GET  /api/list/artists    list distinct artist names
   GET  /api/list/titles     list distinct recording titles
-  GET  /api/search?q=QUERY  search the collection (regex and field-scope supported)
+  GET  /api/search?q=QUERY  search the collection
   GET  /api/show/{id}       full metadata for one record
+  DELETE /api/show/{id}     remove a record from the collection
   POST /api/scan            start async re-scan of audioDir
   GET  /api/scan/status     poll async scan progress
+  POST /api/sweep           start async sweep of stale records
+  GET  /api/sweep/status    poll async sweep progress
   GET  /api/audio/{id}      stream audio file (supports Range requests)
+  POST /api/shutdown        gracefully stop the server
   GET  /api/help            API reference as Markdown
 
 EXAMPLES
 
+  {app_name}
   {app_name} server
+`
+
+const helpPlayer = `
+{app_name} player — start the terminal (TUI) player
+
+SYNOPSIS
+
+  {app_name} player
+
+DESCRIPTION
+
+  Opens a full-screen terminal user interface for browsing and playing the
+  collection.  Requires a terminal that supports ANSI escape codes.
+
+KEY BINDINGS
+
+  Tab          switch panel focus (browse ↔ queue)
+  ← →          cycle browse tabs (Albums / Artists / Titles)
+  ↑ ↓          navigate list
+  PgUp / PgDn  page through list
+  Home / End   jump to first / last item
+  Enter        play selected item / jump to queued track
+  a            append selected item to the queue
+  Space        play / pause
+  n            next track
+  p            previous track
+  +  -         volume up / down
+  /            open search input
+  Esc          cancel search
+  q  Ctrl-C    quit
+
+EXAMPLES
+
+  {app_name} player
 `
 
 var helpTopics = map[string]string{
@@ -305,6 +359,7 @@ var helpTopics = map[string]string{
 	"show":   helpShow,
 	"delete": helpDelete,
 	"server": helpServer,
+	"player": helpPlayer,
 }
 
 // --------------------------------------------------------------------------
@@ -337,12 +392,19 @@ func main() {
 		os.Exit(0)
 	}
 
+	format := parseFormat(*fmtStr)
+
+	// No-argument default: start the web server.
 	if flag.NArg() < 1 {
-		fmt.Println(audiobox.FmtHelp(helpGeneral, appName, audiobox.Version, audiobox.ReleaseDate, audiobox.ReleaseHash))
-		os.Exit(0)
+		col, err := audiobox.LoadAudiobox()
+		if err != nil {
+			log.Fatalf("error opening collection: %v", err)
+		}
+		defer col.Close()
+		handleServer(col)
+		return
 	}
 
-	format := parseFormat(*fmtStr)
 	action := strings.ToLower(flag.Arg(0))
 	args := flag.Args()[1:]
 
@@ -542,6 +604,18 @@ func handleShow(col *audiobox.Collection, args []string, format OutputFormat) {
 
 func handleServer(col *audiobox.Collection) {
 	logger := log.New(os.Stderr, "", log.LstdFlags)
+	cfg := col.Config()
+	port := cfg.Port
+	if port == 0 {
+		port = 8010
+	}
+	url := fmt.Sprintf("http://127.0.0.1:%d", port)
+	go func() {
+		time.Sleep(500 * time.Millisecond)
+		if err := openBrowser(url); err != nil {
+			logger.Printf("could not open browser: %v", err)
+		}
+	}()
 	if err := col.Serve(logger); err != nil {
 		log.Fatalf("server error: %v", err)
 	}
@@ -562,6 +636,21 @@ func handlePlayer(col *audiobox.Collection) {
 	if err := audiobox.RunPlayer(col); err != nil {
 		log.Fatalf("player error: %v", err)
 	}
+}
+
+// openBrowser opens url in the operating system's default web browser.
+// Errors are non-fatal — headless systems without a display are silently skipped.
+func openBrowser(url string) error {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", url)
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+	default: // linux, raspberry pi os, bsd, etc.
+		cmd = exec.Command("xdg-open", url)
+	}
+	return cmd.Start()
 }
 
 // --------------------------------------------------------------------------
