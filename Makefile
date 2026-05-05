@@ -44,7 +44,7 @@ ifeq ($(OS), Windows)
 	EXT = .exe
 endif
 
-build: version.go $(PROGRAMS) man CITATION.cff about.md installer.sh installer.ps1 bundle
+build: version.go $(PROGRAMS) man CITATION.cff about.md installer.sh installer.ps1 bundle macos-app-bundle
 
 version.go: .FORCE
 	cmt codemeta.json version.go
@@ -93,6 +93,12 @@ bundle: htdocs/module/audiobox.js
 htdocs/module/audiobox.js: audiobox_player.ts audiobox_api.ts deno.json
 	@mkdir -p htdocs/module
 	deno task bundle
+
+macos-app-bundle: .FORCE
+	-./create_macos_app_bundle.bash
+
+macos-dmg: macos-app-bundle
+	-./create_macos_dmg.bash
 
 test: $(PACKAGE)
 	go test
@@ -208,7 +214,7 @@ distribute_docs:
 	@cp -vR man dist/
 	@for DNAME in $(DOCS); do cp -vR $$DNAME dist/; done
 
-release: build installer.sh save setup_dist distribute_docs dist/Linux-x86_64 dist/Linux-aarch64 dist/macOS-x86_64 dist/macOS-arm64 dist/Windows-x86_64 dist/Windows-arm64 dist/Linux-armv7l
+release: build installer.sh save setup_dist distribute_docs dist/Linux-x86_64 dist/Linux-aarch64 dist/macOS-x86_64 dist/macOS-arm64 dist/Windows-x86_64 dist/Windows-arm64 dist/Linux-armv7l macos-dmg
 
 
 .FORCE:

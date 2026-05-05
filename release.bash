@@ -33,6 +33,7 @@ if [ "$YES_NO" = "y" ]; then
 		--generate-notes
 	echo "Uploading distribution files"
     gh release upload "${RELEASE_TAG}"	dist/*.zip 
+    gh release upload "${RELEASE_TAG}"	dist/*.dmg 
 	
 	cat <<EOT
 
