@@ -44,7 +44,7 @@ ifeq ($(OS), Windows)
 	EXT = .exe
 endif
 
-build: version.go $(PROGRAMS) man CITATION.cff about.md installer.sh installer.ps1 bundle macos-app-bundle
+build: version.go $(PROGRAMS) man CITATION.cff about.md installer.sh installer.ps1 bundle
 
 version.go: .FORCE
 	cmt codemeta.json version.go
@@ -95,10 +95,10 @@ htdocs/module/audiobox.js: audiobox_player.ts audiobox_api.ts deno.json
 	deno task bundle
 
 macos-app-bundle: .FORCE
-	-./create_macos_app_bundle.bash
+	./create_macos_app_bundle.bash
 
 macos-dmg: macos-app-bundle .FORCE
-	-./create_macos_dmg.bash
+	./create_macos_dmg.bash
 
 test: $(PACKAGE)
 	go test

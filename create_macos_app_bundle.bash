@@ -3,8 +3,8 @@ set -euo pipefail
 
 # --- Check if running on macOS ---
 if [[ "$(uname)" != "Darwin" ]]; then
-  echo "Error: This script must be run on macOS."
-  exit 1
+  echo "Warning: This script must be run on macOS. Skipping"
+  exit 0
 fi
 
 # --- Extract App Name and Version from codemeta.json ---
