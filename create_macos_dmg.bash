@@ -67,4 +67,11 @@ hdiutil create -srcfolder "$STAGING_DIR" -volname "$VOLUME_NAME" -ov -format UDZ
 echo "Cleaning up..."
 rm -rf "$STAGING_DIR"
 
-echo "✅ Done! Final disk image: $DMG_FINAL"
+echo "✅ Almost Done! Final disk image: $DMG_FINAL"
+echo "Moving to dist/"
+mv -v "${DMG_FINAL}" dist/
+if [ -e "dist/${DMG_FINAL}" ]; then
+    echo "✅ Done! Final disk image in dist/$DMG_FINAL"
+else
+    echo "Oops, failed to move ${DMG_FINAL} to dist/$DMG_FINAL"
+fi
