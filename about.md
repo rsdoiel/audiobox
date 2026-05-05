@@ -11,7 +11,7 @@ authors:
 
 
 repository_code: https://github.com/rsdoiel/audiobox
-version: 0.0.2
+version: 0.0.3
 license_url: https://www.gnu.org/licenses/agpl-3.0.txt
 
 programming_language:
@@ -19,16 +19,17 @@ programming_language:
   - TypeScript
 
 
-date_released: 2026-05-02
+date_released: 2026-05-05
 ---
 
 About this software
 ===================
 
-## audiobox 0.0.2
+## audiobox 0.0.3
 
-- Web UI will intialize on first run
-- TUI display bugs fixed
+- Bug fixes for missing audio file metadata
+- Web UI improvements including a new shuffle feature
+- Improve app deployment for macOS
 
 ### Authors
 

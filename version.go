@@ -6,13 +6,13 @@ import (
 
 const (
     // Version number of release
-    Version = "0.0.2"
+    Version = "0.0.3"
 
     // ReleaseDate, the date version.go was generated
-    ReleaseDate = "2026-05-02"
+    ReleaseDate = "2026-05-05"
 
     // ReleaseHash, the Git hash when version.go was generated
-    ReleaseHash = "27e434f"
+    ReleaseHash = "1a55b9b"
     LicenseText = `
 audioinfo a Go module for managing audio metadata in a SQLite3 database
 Copyright (C) 2026 R. S. Doiel
