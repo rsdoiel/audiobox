@@ -106,8 +106,10 @@ cat > "$APP_BUNDLE_PATH/Contents/Info.plist" <<EOF
     <string>$APP_VERSION</string>
     <key>NSHighResolutionCapable</key>
     <true/>
-    <key>LSUIElement</key>
-    <false/>
+	<key>LSUIElement</key>
+    <false/>  <!-- This MUST be false for the Dock icon to appear -->
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.utilities</string>  <!-- Optional: Sets the app category in Launchpad -->
 </dict>
 </plist>
 EOF
