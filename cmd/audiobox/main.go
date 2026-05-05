@@ -647,6 +647,8 @@ func handleServer(col *audiobox.Collection) {
 	if err := col.Serve(logger); err != nil {
 		log.Fatalf("server error: %v", err)
 	}
+	// Block indefinitely to keep the process alive
+	select {}
 }
 
 func handleDelete(col *audiobox.Collection, args []string) {

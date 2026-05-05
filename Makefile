@@ -97,7 +97,7 @@ htdocs/module/audiobox.js: audiobox_player.ts audiobox_api.ts deno.json
 macos-app-bundle: .FORCE
 	-./create_macos_app_bundle.bash
 
-macos-dmg: macos-app-bundle
+macos-dmg: macos-app-bundle .FORCE
 	-./create_macos_dmg.bash
 
 test: $(PACKAGE)
