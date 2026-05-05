@@ -76,7 +76,15 @@ rm -rf "${APP_NAME}.iconset"
 
 # --- Copy Binary and Icon ---
 echo "Copying binary and icon to .app bundle..."
-cp "${BINARY_NAME}" "${APP_BUNDLE_PATH}/Contents/Resources/$APP_NAME"
+cp "${BINARY_NAME}" "${APP_BUNDLE_PATH}/Contents/Resources/${BINARY_NAME}"
+cat <<LAUNCH_SCRIPT >"${APP_BUNDLE_PATH}/Contents/Resources/$APP_NAME"
+#!/bin/bash
+SCRIPT_DIR=\$(cd "\$(dirname "\$0")" && pwd)
+RESOURCES_DIR="\$SCRIPT_DIR/../Resources"
+exec "\$RESOURCES_DIR/${BINARY_NAME}" 
+
+LAUNCH_SCRIPT
+
 cp "${ICNS_NAME}" "${APP_BUNDLE_PATH}/Contents/Resources/$ICNS_NAME"
 
 # --- Generate Info.plist ---
