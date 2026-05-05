@@ -77,13 +77,6 @@ rm -rf "${APP_NAME}.iconset"
 # --- Copy Binary and Icon ---
 echo "Copying binary and icon to .app bundle..."
 cp "${BINARY_NAME}" "${APP_BUNDLE_PATH}/Contents/Resources/${BINARY_NAME}"
-cat <<LAUNCH_SCRIPT >"${APP_BUNDLE_PATH}/Contents/Resources/$APP_NAME"
-#!/bin/bash
-SCRIPT_DIR=\$(cd "\$(dirname "\$0")" && pwd)
-RESOURCES_DIR="\$SCRIPT_DIR/../Resources"
-exec "\$RESOURCES_DIR/${BINARY_NAME}" 
-
-LAUNCH_SCRIPT
 
 cp "${ICNS_NAME}" "${APP_BUNDLE_PATH}/Contents/Resources/$ICNS_NAME"
 
@@ -116,12 +109,25 @@ EOF
 
 # --- Create Executable Shell Script ---
 echo "Creating executable shell script..."
-cat > "$APP_BUNDLE_PATH/Contents/MacOS/$APP_NAME" <<'SCRIPTEOF'
+cat <<SCRIPTEOF >"$APP_BUNDLE_PATH/Contents/MacOS/$APP_NAME" 
 #!/bin/bash
-SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
-RESOURCES_DIR="$SCRIPT_DIR/../Resources"
-exec "$RESOURCES_DIR/$APP_NAME" "$@"
+SCRIPT_DIR=\$(cd "\$(dirname "\$0")" && pwd)
+RESOURCES_DIR="\$SCRIPT_DIR/../Resources"
+
+# Launch the Go binary in the background
+exec "\$RESOURCES_DIR/$BINARY_NAME" "server" &
+
+# Get the process ID of the Go binary
+GO_PID=\$!
+
+# Activate the app in the foreground
+open -a "\$SCRIPT_DIR/.."
+
+# Wait for the Go binary to finish
+wait \$GO_PID
+
 SCRIPTEOF
+
 chmod +x "$APP_BUNDLE_PATH/Contents/MacOS/$APP_NAME"
 
 # --- Clean Up ---
