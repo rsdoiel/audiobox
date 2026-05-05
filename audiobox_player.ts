@@ -1,4 +1,4 @@
-import type { Agent, AudioInfo, CollectionStatus } from "./audiobox_api.ts";
+import type { Agent, AlbumEntry, AudioInfo, CollectionStatus } from "./audiobox_api.ts";
 import { AudioInfoAPI } from "./audiobox_api.ts";
 
 // ---------------------------------------------------------------------------
@@ -147,9 +147,11 @@ const STYLES = `
 }
 .list-item {
   padding: 6px 10px; cursor: pointer; border-bottom: 1px solid #f0f0f0;
+  display: flex; align-items: center; gap: 6px;
 }
 .list-item:hover { background: #f0f0f0; }
 .list-item:last-child { border-bottom: none; }
+.list-item-main { flex: 1; min-width: 0; }
 .list-item-title {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px;
 }
@@ -157,6 +159,12 @@ const STYLES = `
   font-size: 11px; color: #888; white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis; margin-top: 1px;
 }
+.row-add-btn {
+  flex-shrink: 0; padding: 2px 6px; border: 1px solid #ccc;
+  border-radius: 3px; background: #fff; color: #666;
+  cursor: pointer; font-size: 14px; line-height: 1.2;
+}
+.row-add-btn:hover { background: #e8f0fe; border-color: #4a90d9; color: #1a73e8; }
 .list-empty { padding: 10px; color: #888; text-align: center; font-style: italic; }
 
 /* ---- now-playing panel ---- */
@@ -191,6 +199,13 @@ const STYLES = `
 .queue-panel { padding: 6px 10px 10px; border-bottom: 1px solid #ddd; }
 .queue-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
 .queue-title { font-weight: 600; font-size: 12px; text-transform: uppercase; color: #888; }
+.queue-actions { display: flex; gap: 4px; align-items: center; }
+.shuffle-btn {
+  font-size: 11px; padding: 2px 6px; border: 1px solid #ccc;
+  border-radius: 3px; background: #fff; cursor: pointer;
+}
+.shuffle-btn:disabled { opacity: 0.4; cursor: default; }
+.shuffle-btn:not(:disabled):hover { background: #f0f0f0; }
 .toggle-queue-btn {
   font-size: 11px; padding: 2px 6px; border: 1px solid #ccc;
   border-radius: 3px; background: #fff; cursor: pointer;
@@ -283,7 +298,10 @@ export const PLAYER_TEMPLATE = `
 <div class="queue-panel">
   <div class="queue-header">
     <span class="queue-title">Queue</span>
-    <button class="toggle-queue-btn">Hide</button>
+    <div class="queue-actions">
+      <button class="shuffle-btn" title="Shuffle remaining tracks" disabled>⇄ Shuffle</button>
+      <button class="toggle-queue-btn">Hide</button>
+    </div>
   </div>
   <div class="queue-list">
     <div class="list-empty">No tracks queued</div>
@@ -461,11 +479,15 @@ export class AudioInfoPlayer extends _Base {
     });
     this._setListContent('<div class="list-empty">Loading…</div>');
     try {
-      let items: string[] = [];
-      if (tab === "albums") items = await this.api.listAlbums();
-      else if (tab === "artists") items = await this.api.listArtists();
-      else items = await this.api.listTitles();
-      this._renderStringList(items, tab);
+      if (tab === "albums") {
+        const albums = await this.api.listAlbums();
+        this._renderAlbumList(albums);
+      } else {
+        const items = tab === "artists"
+          ? await this.api.listArtists()
+          : await this.api.listTitles();
+        this._renderStringList(items, tab);
+      }
     } catch (e) {
       this._setListContent(`<div class="list-empty">${this._escHtml(String(e))}</div>`);
     }
@@ -488,6 +510,28 @@ export class AudioInfoPlayer extends _Base {
     this.qs(".list-panel").innerHTML = html;
   }
 
+  /** _renderAlbumList renders the albums browse list. data-browse-item is set to the
+   * plain album name (the search key) while the visible text shows displayName so that
+   * clicking a disambiguated entry like "Best Of [Classical]" searches album:"Best Of".
+   */
+  private _renderAlbumList(albums: AlbumEntry[]): void {
+    if (albums.length === 0) {
+      this._setListContent('<div class="list-empty">No items found</div>');
+      return;
+    }
+    this._setListContent(
+      albums
+        .map(
+          (a) =>
+            `<div class="list-item" data-browse-tab="albums" data-browse-item="${this._escAttr(a.name)}">` +
+            `<div class="list-item-main"><div class="list-item-title">${this._escHtml(a.displayName)}</div></div>` +
+            `<button class="row-add-btn" title="Add to queue" data-add-tab="albums" data-add-item="${this._escAttr(a.name)}">⊕</button>` +
+            `</div>`,
+        )
+        .join(""),
+    );
+  }
+
   private _renderStringList(items: string[], tab: string): void {
     if (items.length === 0) {
       this._setListContent('<div class="list-empty">No items found</div>');
@@ -498,7 +542,8 @@ export class AudioInfoPlayer extends _Base {
         .map(
           (item) =>
             `<div class="list-item" data-browse-tab="${this._escAttr(tab)}" data-browse-item="${this._escAttr(item)}">` +
-            `<div class="list-item-title">${this._escHtml(item)}</div>` +
+            `<div class="list-item-main"><div class="list-item-title">${this._escHtml(item)}</div></div>` +
+            `<button class="row-add-btn" title="Add to queue" data-add-tab="${this._escAttr(tab)}" data-add-item="${this._escAttr(item)}">⊕</button>` +
             `</div>`,
         )
         .join(""),
@@ -519,8 +564,10 @@ export class AudioInfoPlayer extends _Base {
           const sub = [formatArtists(t.ByArtist), t.InAlbum].filter(Boolean).join(" · ");
           return (
             `<div class="list-item" data-queue-index="${i}">` +
+            `<div class="list-item-main">` +
             `<div class="list-item-title">${this._escHtml(t.Name || "(untitled)")}</div>` +
             (sub ? `<div class="list-item-sub">${this._escHtml(sub)}</div>` : "") +
+            `</div>` +
             `</div>`
           );
         })
@@ -528,6 +575,35 @@ export class AudioInfoPlayer extends _Base {
     );
     this._updateQueuePanel();
     if (autoPlay) this._playIndex(0);
+  }
+
+  /** _addToQueue appends tracks to the playback queue without starting playback.
+   * Existing playback is unaffected; the user presses play when ready.
+   *
+   * Parameters:
+   *   tracks (AudioInfo[]) — tracks to append
+   */
+  private _addToQueue(tracks: AudioInfo[]): void {
+    if (tracks.length === 0) return;
+    this.queue = [...this.queue, ...tracks];
+    this._updateQueuePanel();
+  }
+
+  /** _shuffleQueue applies a Fisher-Yates shuffle to all unplayed tracks in
+   * the queue (those after currentIndex). The currently-playing track and any
+   * already-played tracks are left in place. If nothing is playing the entire
+   * queue is shuffled.
+   */
+  private _shuffleQueue(): void {
+    const splitAt = this.currentIndex + 1;
+    const played = this.queue.slice(0, splitAt);
+    const remaining = this.queue.slice(splitAt);
+    for (let i = remaining.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [remaining[i], remaining[j]] = [remaining[j], remaining[i]];
+    }
+    this.queue = [...played, ...remaining];
+    this._updateQueuePanel();
   }
 
   // ---- playback -----------------------------------------------------------
@@ -564,6 +640,8 @@ export class AudioInfoPlayer extends _Base {
   private _updateQueuePanel(): void {
     const list = this.qs(".queue-list");
     const title = this.qs(".queue-title");
+    const shuffleBtn = this.qs<HTMLButtonElement>(".shuffle-btn");
+    shuffleBtn.disabled = this.queue.length === 0;
     if (this.queue.length === 0) {
       list.innerHTML = '<div class="list-empty">No tracks queued</div>';
       title.textContent = "Queue";
@@ -621,6 +699,20 @@ export class AudioInfoPlayer extends _Base {
 
     // Browse/result list clicks (delegated on list-panel)
     this.qs(".list-panel").addEventListener("click", (e: Event) => {
+      // ⊕ add-to-queue button takes priority over the row click.
+      const addBtn = (e.target as Element).closest<HTMLElement>(".row-add-btn");
+      if (addBtn) {
+        const tab = addBtn.dataset.addTab;
+        const item = addBtn.dataset.addItem ?? "";
+        if (tab) {
+          const q = buildBrowseQuery(tab, item);
+          this.api.search(q)
+            .then((tracks) => this._addToQueue(tracks))
+            .catch((err) => console.warn("add to queue:", String(err)));
+        }
+        return;
+      }
+
       const el = (e.target as Element).closest<HTMLElement>(".list-item");
       if (!el) return;
       if (el.dataset.browseTab) {
@@ -719,6 +811,9 @@ export class AudioInfoPlayer extends _Base {
       libraryBody.style.display = this.libraryVisible ? "" : "none";
       toggleLibraryBtn.textContent = this.libraryVisible ? "Hide" : "Show";
     });
+
+    // Shuffle queue
+    this.qs(".shuffle-btn").addEventListener("click", () => this._shuffleQueue());
 
     // Scan
     this.qs(".scan-btn").addEventListener("click", () => this._startScan());

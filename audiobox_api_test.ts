@@ -1,5 +1,5 @@
 import { assertEquals, assertRejects } from "@std/assert";
-import { AudioInfoAPI, type AudioInfo, type ScanStatus } from "./audiobox_api.ts";
+import { AudioInfoAPI, type AlbumEntry, type AudioInfo, type ScanStatus } from "./audiobox_api.ts";
 
 type FetchFn = typeof globalThis.fetch;
 const originalFetch: FetchFn = globalThis.fetch;
@@ -18,11 +18,18 @@ function restoreFetch(): void {
   globalThis.fetch = originalFetch;
 }
 
-Deno.test("listAlbums - returns string array", async () => {
-  mockFetch(["Bach Partitas", "Goldberg Variations"]);
+Deno.test("listAlbums - returns AlbumEntry array", async () => {
+  const fixture: AlbumEntry[] = [
+    { name: "Bach Partitas", displayName: "Bach Partitas", dir: "/music/Bach-Partitas" },
+    { name: "Goldberg Variations", displayName: "Goldberg Variations", dir: "/music/Goldberg-Variations" },
+  ];
+  mockFetch(fixture);
   try {
     const api = new AudioInfoAPI("http://localhost:8010");
-    assertEquals(await api.listAlbums(), ["Bach Partitas", "Goldberg Variations"]);
+    const albums = await api.listAlbums();
+    assertEquals(albums.length, 2);
+    assertEquals(albums[0].name, "Bach Partitas");
+    assertEquals(albums[1].name, "Goldberg Variations");
   } finally {
     restoreFetch();
   }

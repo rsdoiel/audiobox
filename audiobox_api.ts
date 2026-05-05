@@ -38,6 +38,17 @@ export interface AudioInfo {
   ChecksumAlgorithm: string;
 }
 
+/** AlbumEntry represents a single album returned by GET /api/list/albums.
+ * name is the plain album name used as the search key.
+ * displayName is the qualified label shown to the user (may include a
+ * parent-directory qualifier when two albums share the same name).
+ */
+export interface AlbumEntry {
+  name: string;
+  displayName: string;
+  dir: string;
+}
+
 /** CollectionStatus describes the current state of the audiobox collection. */
 export interface CollectionStatus {
   initialized: boolean;
@@ -129,16 +140,19 @@ export class AudioInfoAPI {
     return this.postJSON<{ status: string; audio_dir: string }>("/api/init");
   }
 
-  /** listAlbums returns all distinct album names in the collection.
+  /** listAlbums returns all album entries in the collection.
+   * Each entry has a plain name (used for searching) and a displayName
+   * (shown to the user; may include a qualifier when two albums share the same name).
    *
    * Returns:
-   *   Promise<string[]> — sorted album names
+   *   Promise<AlbumEntry[]> — sorted album entries
    *
    * Example:
    *   const albums = await api.listAlbums();
+   *   albums.forEach(a => console.log(a.displayName));
    */
-  async listAlbums(): Promise<string[]> {
-    return this.getJSON<string[]>("/api/list/albums");
+  async listAlbums(): Promise<AlbumEntry[]> {
+    return this.getJSON<AlbumEntry[]>("/api/list/albums");
   }
 
   /** listArtists returns all distinct artist names in the collection.

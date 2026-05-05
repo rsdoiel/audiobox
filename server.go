@@ -191,11 +191,7 @@ func (c *Collection) handleListAlbums(logger *log.Logger) http.HandlerFunc {
 			writeJSONError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		names := make([]string, len(items))
-		for i, a := range items {
-			names[i] = a.DisplayName
-		}
-		writeJSON(w, names)
+		writeJSON(w, items)
 	}
 }
 

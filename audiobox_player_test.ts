@@ -175,3 +175,13 @@ Deno.test("PLAYER_TEMPLATE - has audio element", () => {
   )!;
   assertEquals(doc.querySelector(".audio-el") !== null, true);
 });
+
+Deno.test("PLAYER_TEMPLATE - has shuffle button disabled by default", () => {
+  const doc = new DOMParser().parseFromString(
+    `<html><body>${PLAYER_TEMPLATE}</body></html>`,
+    "text/html",
+  )!;
+  const btn = doc.querySelector<HTMLButtonElement>(".shuffle-btn");
+  assertEquals(btn !== null, true);
+  assertEquals(btn?.hasAttribute("disabled"), true);
+});

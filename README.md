@@ -1,5 +1,7 @@
 
 
+![Audiobox, this digital wax cylinder player of the 21st Century!](audiobox.jpg)
+
 # audiobox
 
 audiobox is a go module that for managing audio metadata in an SQLite3 database. It uses "https://github.com/dhowden/tag" module to extract metadata that may be found in the audio file itself.
@@ -12,7 +14,7 @@ This software is for Lourdes.
 - status: concept
 - released: 2026-05-02
 
-- Web UI will intialize on first run
+- Web UI will initialize on first run
 - TUI display bugs fixed
 
 

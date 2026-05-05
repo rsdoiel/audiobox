@@ -614,3 +614,154 @@ func TestComputeSHA256(t *testing.T) {
 		t.Error("computeSHA256 is not deterministic")
 	}
 }
+
+func TestTrackTitleFromStem(t *testing.T) {
+	cases := []struct {
+		stem string
+		want string
+	}{
+		// Numeric prefix stripped, remainder deslugified
+		{"01 Song Title", "Song Title"},
+		{"01-Song-Title", "Song Title"},
+		{"1-02 Song Title", "Song Title"},
+		{"(Disc 2) 03 Third Track", "Third Track"},
+		// No numeric prefix — full stem deslugified
+		{"Track_1", "Track 1"},
+		{"Song_Name", "Song Name"},
+		{"My-Favorite-Song", "My Favorite Song"},
+		// Numeric prefix with no remainder — full stem fallback
+		{"01", "01"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.stem, func(t *testing.T) {
+			got := trackTitleFromStem(tc.stem)
+			if got != tc.want {
+				t.Errorf("trackTitleFromStem(%q) = %q, want %q", tc.stem, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestAlbumFromPath(t *testing.T) {
+	audioDir := "/music"
+	cases := []struct {
+		filePath string
+		want     string
+	}{
+		// File directly in audioDir — no album
+		{"/music/track.mp3", ""},
+		// One level: album is the directory
+		{"/music/Ulithian Songs/track.mp3", "Ulithian Songs"},
+		// Generic leaf skipped — parent is the album
+		{"/music/Ulithian Songs/Tracks/track.mp3", "Ulithian Songs"},
+		// Artist/Album layout — album is innermost non-generic
+		{"/music/Artist/Album/track.mp3", "Album"},
+		{"/music/Artist/Album/Tracks/track.mp3", "Album"},
+		// All-generic path — outermost used as fallback
+		{"/music/CD1/Tracks/track.mp3", "CD1"},
+		// Slugified names are deslugified
+		{"/music/My-Artist/Best-Of/Tracks/track.mp3", "Best Of"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.filePath, func(t *testing.T) {
+			got := albumFromPath(audioDir, tc.filePath)
+			if got != tc.want {
+				t.Errorf("albumFromPath(%q) = %q, want %q", tc.filePath, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestArtistFromPath(t *testing.T) {
+	audioDir := "/music"
+	cases := []struct {
+		filePath string
+		want     string
+	}{
+		// No artist inferable (0 or 1 directory level)
+		{"/music/track.mp3", ""},
+		{"/music/Album/track.mp3", ""},
+		// Outermost != album → artist
+		{"/music/Artist/Album/track.mp3", "Artist"},
+		{"/music/Artist/Album/Tracks/track.mp3", "Artist"},
+		// Outermost == album (e.g. "Ulithian Songs/Tracks/") → no artist
+		{"/music/Ulithian Songs/Tracks/track.mp3", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.filePath, func(t *testing.T) {
+			got := artistFromPath(audioDir, tc.filePath)
+			if got != tc.want {
+				t.Errorf("artistFromPath(%q) = %q, want %q", tc.filePath, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestProcessAudioFileFallbacks(t *testing.T) {
+	col, cleanup := setupTestCollection(t)
+	defer cleanup()
+
+	// Create a directory structure mimicking "Ulithian Songs/Tracks/Track_1.mp3".
+	trackDir := filepath.Join(testMusicDir, "Ulithian Songs", "Tracks")
+	if err := os.MkdirAll(trackDir, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	trackPath := filepath.Join(trackDir, "Track_1.mp3")
+	f, err := os.Create(trackPath)
+	if err != nil {
+		t.Fatalf("create track: %v", err)
+	}
+	f.Close()
+	defer os.RemoveAll(filepath.Join(testMusicDir, "Ulithian Songs"))
+
+	logger := log.New(os.Stderr, "test: ", 0)
+	if err := col.ProcessAudioFile(trackPath, logger); err != nil {
+		t.Fatalf("ProcessAudioFile: %v", err)
+	}
+
+	results, err := col.SearchAudioFiles("Ulithian")
+	if err != nil {
+		t.Fatalf("SearchAudioFiles: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	info := results[0]
+
+	if info.Name == "" {
+		t.Error("Name should not be empty after fallback")
+	}
+	if info.InAlbum != "Ulithian Songs" {
+		t.Errorf("InAlbum = %q, want %q", info.InAlbum, "Ulithian Songs")
+	}
+	if !hasArtistName(info.ByArtist) {
+		t.Error("ByArtist should have a name after fallback")
+	}
+}
+
+func TestGetAlbumEntriesGenericSubdir(t *testing.T) {
+	col, cleanup := setupTestCollection(t)
+	defer cleanup()
+
+	// Files in "Album/Tracks/" — album name should be "Album", not "Tracks".
+	info := sampleInfo("gen")
+	info.InAlbum = ""
+	info.ContentURL = filepath.Join(testMusicDir, "Album", "Tracks", "track.mp3")
+	if _, err := col.Create(info); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	entries, err := col.GetAlbumEntries()
+	if err != nil {
+		t.Fatalf("GetAlbumEntries: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("want 1 entry, got %d", len(entries))
+	}
+	if entries[0].Name != "Album" {
+		t.Errorf("Name = %q, want %q", entries[0].Name, "Album")
+	}
+	if entries[0].DisplayName != "Album" {
+		t.Errorf("DisplayName = %q, want %q", entries[0].DisplayName, "Album")
+	}
+}

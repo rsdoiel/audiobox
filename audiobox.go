@@ -241,6 +241,26 @@ func (c *Collection) ProcessAudioFile(filePath string, logger *log.Logger) error
 		}
 	}
 
+	// Title fallback: derive from filename stem when tags did not provide one.
+	if info.Name == "" {
+		stem := strings.TrimSuffix(filepath.Base(filePath), filepath.Ext(filePath))
+		info.Name = trackTitleFromStem(stem)
+	}
+
+	// Album fallback: derive from directory structure relative to audioDir.
+	if info.InAlbum == "" {
+		info.InAlbum = albumFromPath(c.cfg.AudioDir, filePath)
+	}
+
+	// Artist fallback: derive from directory structure, or use "Unknown".
+	if !hasArtistName(info.ByArtist) {
+		artist := artistFromPath(c.cfg.AudioDir, filePath)
+		if artist == "" {
+			artist = "Unknown"
+		}
+		info.ByArtist = []Agent{{Type: "Person", Name: artist}}
+	}
+
 	var existingID string
 	err = c.db.QueryRow("SELECT id FROM audio_files WHERE content_url = ?", filePath).Scan(&existingID)
 	if err != nil && err != sql.ErrNoRows {
@@ -1000,6 +1020,7 @@ var (
 	reDiscSlug   = regexp.MustCompile(`(?i)^Disc-(\d+)-(\d+)`)
 	reDiscTrack  = regexp.MustCompile(`^(\d+)-(\d{2})[\s\-]`)
 	reTrackOnly  = regexp.MustCompile(`^(\d+)[\s\-]`)
+	reGenericDir = regexp.MustCompile(`(?i)^(tracks?|cd\s*\d+|dis[ck]\s*\d+|side\s*[ab])$`)
 )
 
 // parseDiscTrackFromFilename extracts disc and track numbers from a filename stem
@@ -1033,18 +1054,143 @@ func parseDiscTrackFromFilename(stem string) (disc, track int) {
 	return 0, 0
 }
 
+// trackTitleFromStem strips any leading disc/track-number prefix from a filename
+// stem and returns the remainder as a human-readable title. If no numeric prefix
+// is found the entire stem is deslugified and returned.
+func trackTitleFromStem(stem string) string {
+	for _, re := range []*regexp.Regexp{reDiscParens, reDiscSlug, reDiscTrack, reTrackOnly} {
+		if m := re.FindStringIndex(stem); m != nil {
+			rest := strings.TrimLeft(stem[m[1]:], " -_")
+			if rest != "" {
+				return deslugify(rest)
+			}
+		}
+	}
+	return deslugify(stem)
+}
+
+// hasArtistName reports whether agents contains at least one entry with a non-empty name.
+func hasArtistName(agents []Agent) bool {
+	for _, a := range agents {
+		if a.Name != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// isGenericDirName reports whether name is a generic container directory that
+// does not carry album identity (e.g. "Tracks", "CD1", "Disc 2", "Side A").
+func isGenericDirName(name string) bool {
+	return reGenericDir.MatchString(strings.TrimSpace(name))
+}
+
+// pathDirParts returns the directory components between audioDir and the file's
+// containing directory. Both paths are resolved to absolute form before
+// comparison so that mixing relative and absolute paths is safe.
+// Returns nil when filePath is directly inside audioDir.
+func pathDirParts(audioDir, filePath string) []string {
+	absAudio, err1 := filepath.Abs(audioDir)
+	absDir, err2 := filepath.Abs(filepath.Dir(filePath))
+	if err1 != nil || err2 != nil {
+		return nil
+	}
+	rel, err := filepath.Rel(absAudio, absDir)
+	if err != nil || rel == "." {
+		return nil
+	}
+	return strings.Split(filepath.ToSlash(rel), "/")
+}
+
+// albumFromPath derives an album name from the directory structure between
+// audioDir and filePath. It walks the path components from innermost to
+// outermost, skipping generic container names ("Tracks", "CD1", etc.), and
+// returns the first non-generic component deslugified.
+//
+//	~/Music/Ulithian Songs/Tracks/Track_1.mp3  →  "Ulithian Songs"
+//	~/Music/Artist/Album/Tracks/track.mp3      →  "Album"
+//	~/Music/Artist/Album/track.mp3             →  "Album"
+//	~/Music/track.mp3                          →  "" (no subdirectory)
+func albumFromPath(audioDir, filePath string) string {
+	parts := pathDirParts(audioDir, filePath)
+	for i := len(parts) - 1; i >= 0; i-- {
+		if !isGenericDirName(parts[i]) {
+			return deslugify(parts[i])
+		}
+	}
+	if len(parts) > 0 {
+		return deslugify(parts[0]) // all components were generic — use outermost
+	}
+	return ""
+}
+
+// albumDirPath returns the absolute path to the album directory for a given
+// track directory. It resolves trackDir against audioDir and returns the path
+// to the first non-generic component.
+//
+//	albumDirPath("~/Music", "~/Music/Ulithian Songs/Tracks") → "~/Music/Ulithian Songs"
+//	albumDirPath("~/Music", "~/Music/Artist/Album")          → "~/Music/Artist/Album"
+func albumDirPath(audioDir, trackDir string) string {
+	absAudio, err1 := filepath.Abs(audioDir)
+	absTrack, err2 := filepath.Abs(trackDir)
+	if err1 != nil || err2 != nil {
+		return audioDir
+	}
+	rel, err := filepath.Rel(absAudio, absTrack)
+	if err != nil || rel == "." {
+		return absAudio
+	}
+	parts := strings.Split(filepath.ToSlash(rel), "/")
+	for i := len(parts) - 1; i >= 0; i-- {
+		if !isGenericDirName(parts[i]) {
+			return filepath.Join(absAudio, filepath.Join(parts[:i+1]...))
+		}
+	}
+	if len(parts) > 0 {
+		return filepath.Join(absAudio, parts[0])
+	}
+	return absAudio
+}
+
+// artistFromPath derives an artist name from the directory structure. When
+// there are at least two directory levels between audioDir and the file AND
+// the outermost component differs from the derived album name, that outermost
+// component is returned as the artist.
+//
+//	~/Music/Artist/Album/track.mp3         →  "Artist"
+//	~/Music/Artist/Album/Tracks/track.mp3  →  "Artist"
+//	~/Music/Album/track.mp3                →  "" (only one level)
+//	~/Music/Ulithian Songs/Tracks/t.mp3    →  "" (outermost == album)
+func artistFromPath(audioDir, filePath string) string {
+	parts := pathDirParts(audioDir, filePath)
+	if len(parts) < 2 {
+		return ""
+	}
+	albumName := albumFromPath(audioDir, filePath)
+	outermost := deslugify(parts[0])
+	if outermost != albumName {
+		return outermost
+	}
+	return ""
+}
+
+// albumNameFromDir is a convenience wrapper that derives an album name from a
+// track directory path (rather than a file path).
+func albumNameFromDir(audioDir, trackDir string) string {
+	return albumFromPath(audioDir, filepath.Join(trackDir, "x"))
+}
+
 /** GetAlbumEntries returns a sorted list of album entries derived from the
  * directory structure of the collection. Each unique directory that contains
- * audio files becomes one Album entry; the album name is produced by deslugifying
- * the directory's base name (replacing hyphens/underscores with spaces).
+ * audio files becomes one Album entry; the album name is produced by
+ * albumFromPath — which skips generic container directories like "Tracks" or
+ * "CD1" and deslugifies the first meaningful component.
  *
- * This approach means the directory layout is the authoritative source for album
- * identity, which correctly handles releases whose embedded in_album tags are
- * incomplete or missing.  "801-Live-(American-Release)" becomes
- * "801 Live (American Release)" regardless of what the MP3 tags say.
+ * "Ulithian Songs/Tracks/Track_1.mp3" → Album{Name: "Ulithian Songs", …}
+ * "Artist/Album/track.mp3"            → Album{Name: "Album", …}
  *
- * When two different directories deslugify to the same name, both DisplayNames
- * are qualified with their parent directory basename.
+ * When two different directories resolve to the same album name, both
+ * DisplayNames are qualified with their parent directory's base name.
  *
  * Returns:
  *   []Album — sorted by DisplayName
@@ -1053,7 +1199,7 @@ func parseDiscTrackFromFilename(stem string) (disc, track int) {
  * Example:
  *   albums, err := col.GetAlbumEntries()
  *   for _, a := range albums {
- *     fmt.Println(a.DisplayName) // e.g. "801 Live (American Release)"
+ *     fmt.Println(a.DisplayName)
  *   }
  */
 func (c *Collection) GetAlbumEntries() ([]Album, error) {
@@ -1085,7 +1231,10 @@ func (c *Collection) GetAlbumEntries() ([]Album, error) {
 	raws := make([]raw, 0, len(dirSet))
 	nameCounts := make(map[string]int)
 	for dir := range dirSet {
-		name := deslugify(filepath.Base(dir))
+		name := albumNameFromDir(c.cfg.AudioDir, dir)
+		if name == "" {
+			continue // files directly in audioDir — no album grouping
+		}
 		raws = append(raws, raw{dir: dir, name: name})
 		nameCounts[name]++
 	}
@@ -1094,8 +1243,8 @@ func (c *Collection) GetAlbumEntries() ([]Album, error) {
 	for _, r := range raws {
 		displayName := r.name
 		if nameCounts[r.name] > 1 {
-			// Two directories produce the same deslugified name; qualify with parent.
-			displayName = r.name + " [" + deslugify(filepath.Base(filepath.Dir(r.dir))) + "]"
+			qualifier := deslugify(filepath.Base(filepath.Dir(albumDirPath(c.cfg.AudioDir, r.dir))))
+			displayName = r.name + " [" + qualifier + "]"
 		}
 		albums = append(albums, Album{Name: r.name, DisplayName: displayName, Dir: r.dir})
 	}
