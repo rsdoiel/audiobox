@@ -50,6 +50,7 @@ if ($yesNo -eq "y") {
         gh release upload "${releaseTag}" $file.FullName
         Write-Output "  Completed upload: $($file.Name)"
     }
+    gh release upload "${RELEASE_TAG}" "dist/*.dmg"
 
     Write-Output @"
 

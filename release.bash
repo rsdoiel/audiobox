@@ -52,6 +52,7 @@ if [ "${YES_NO}" = "y" ]; then
 		gh release upload "${RELEASE_TAG}" "${FILE}"
 		echo "  Completed upload: ${FILE}"
 	done
+    gh release upload "${RELEASE_TAG}" dist/*.dmg
 
 	cat <<EOT
 
