@@ -12,7 +12,7 @@ MD_PAGES = $(shell ls -1 *.md)
 
 HTML_PAGES = $(shell ls -1 *.md | sed -E 's/.md/.html/g')
 
-build: $(HTML_PAGES) $(MD_PAGES) pagefind
+build: $(HTML_PAGES) $(MD_PAGES) #pagefind
 
 $(HTML_PAGES): $(MD_PAGES) .FORCE
 	if [ -f $(PANDOC) ]; then $(PANDOC) --metadata title=$(basename $@) -s --to html5 $(basename $@).md -o $(basename $@).html \

@@ -13,7 +13,7 @@
     <li><a href="INSTALL.html">INSTALL</a></li>
     <li><a href="user_manual.html">User Manual</a></li>
     <li><a href="about.html">About</a></li>
-    <li><a href="search.html">Search</a></li>
+    <!-- <li><a href="search.html">Search</a></li> -->
     <li><a href="https://github.com/rsdoiel/audiobox">GitHub</a></li>
 </ul>
 </nav>
@@ -21,65 +21,74 @@
 <h1 id="action-items">Action Items</h1>
 <h2 id="bugs">Bugs</h2>
 <ul class="task-list">
-<li><label><input type="checkbox" />When quitting player the cursor need
-to be turned back on.</label></li>
+<li><label><input type="checkbox" />The scan action has no visual
+indicator that is had completed, a progress indicator would be nice to
+include</label></li>
+<li><label><input type="checkbox" />The sweep action has no visual
+indicator that it has completed, a progress indicator would be nice to
+include</label></li>
 </ul>
 <h2 id="next">Next</h2>
 <ul class="task-list">
-<li><label><input type="checkbox" />Search results need to show album
-and artist info, for individual titles it should show the album and
-artist info too</label>
-<ul class="task-list">
-<li><label><input type="checkbox" />selecting a an album or artist entry
-should put the whole list of the album or artist in the pay
-queue</label></li>
+<li><label><input type="checkbox" />There needs to a way to explude
+specific folders from a playlist.</label></li>
+<li><label><input type="checkbox" />Adding content to the queue is done
+by pressing the “+” (add to queue) button only</label></li>
+<li><label><input type="checkbox" />There should be a switch or action
+to allow audiobox to be reachable via HTTP from machines on the same
+network (share audio button)</label></li>
+<li><label><input type="checkbox" />Add a Folders list (with
+include/exclude options) in additional to albums, artists and
+titles</label>
+<ul>
+<li>This would solve the holiday music problem for when it is not the
+holiday season</li>
 </ul></li>
+<li><label><input type="checkbox" />Player improvements</label>
+<ul class="task-list">
+<li><label><input type="checkbox" />The player should always be
+visible</label></li>
+<li><label><input type="checkbox" />Remove the “delete” button from the
+player</label></li>
+<li><label><input type="checkbox" />The player should show the folder,
+album (if available ), artitle (if available) and title (if available)
+of the audio file to be played</label></li>
+</ul></li>
+<li><label><input type="checkbox" />Search Improvments</label>
+<ul class="task-list">
+<li><label><input type="checkbox" />searching needs to work for taking
+you to either the folder list, album list, artist and title depending on
+matching results.</label></li>
+<li><label><input type="checkbox" />matching search results to include
+folders that match, album, artist and title (and indicate what type of
+match it is)</label>
+<ul class="task-list">
+<li><label><input type="checkbox" />each matched result should have “+”
+button for adding that content to the queue and “-” button to remove the
+matching content from the queue</label></li>
+<li><label><input type="checkbox" />The individual title or album should
+have the “+” button to add to the queue</label></li>
+</ul></li>
+</ul></li>
+<li><label><input type="checkbox" />Queue improvements</label>
+<ul class="task-list">
+<li><label><input type="checkbox" />Add a clear button for the
+queue</label></li>
+<li><label><input type="checkbox" />For individual items in the queue
+there can be a “-” (remove from queue) button</label></li>
+<li><label><input type="checkbox" />As items finish being played from
+the queue they should be removed from it</label></li>
+<li><label><input type="checkbox" />The queue doesn’t auto-play, first
+item should be ready in the player but the player doesn’t start until
+the play button is pressed</label></li>
 <li><label><input type="checkbox" />I should be able to do a shuffle on
 the queue after getting the content I want to play into it</label></li>
-<li><label><input type="checkbox" />The queue to should an estimate of
-run time for entries</label></li>
-<li><label><input type="checkbox" checked="" />Add a sweep action that
-removes entries in the database if they are no longer a corresponding
-digital object at the path indicated</label></li>
-<li><label><input type="checkbox" />Scan show have a progress indicator
-and report the number of items added like sweep does.</label></li>
-<li><label><input type="checkbox" />Restructure the directory
-layout</label>
-<ul class="task-list">
-<li><label><input type="checkbox" />The configuration file is called
-audio.yaml always</label></li>
-<li><label><input type="checkbox" />Use <code>~/Audio</code> as the base
-directory for app, it will hold audio.yaml and audio.db along with
-directories holding audio files</label></li>
-<li><label><input type="checkbox" /><code>audiobox init</code> will
-initialize, fix or upgrade an audiobox deployment</label>
-<ul class="task-list">
-<li><label><input type="checkbox" />create the <code>~/Audio</code>
-directory if it does not exist</label></li>
-<li><label><input type="checkbox" />create a default
-<code>audio.yaml</code> in <code>~/Audio</code> if one doesn’t
-exist</label></li>
-<li><label><input type="checkbox" />create an audio.db file if one
-doesn’t exist</label></li>
-<li><label><input type="checkbox" />run scan and sweep to cleanup the
-audio.db file content</label></li>
-</ul></li>
-<li><label><input type="checkbox" />Come up with a sane path
-structure</label>
-<ul class="task-list">
-<li><label><input type="checkbox" />Think about something like
-<code>&lt;category&gt;/&lt;artist&gt;/&lt;album&gt;/&lt;titles&gt;.&lt;ext&gt;</code></label>
-<ul class="task-list">
-<li><label><input type="checkbox" />Initial categories Music,
-SpokenWord, Podcast, Books, AudioTheater</label></li>
-<li><label><input type="checkbox" />artist can be a person or group or
-group with collaborators (still listed under the group or primary
-creator)</label></li>
-</ul></li>
-</ul></li>
-<li><label><input type="checkbox" />Directory layout becomes an
-expression of the metadata and can be one of the navigable items on TUI
-or Web UI</label></li>
+<li><label><input type="checkbox" />The queue should indicate an
+estimate of run time for entries</label></li>
+<li><label><input type="checkbox" />You should be able to save the queue
+as a playlist</label></li>
+<li><label><input type="checkbox" />A playload should be loadable into
+the queue</label></li>
 </ul></li>
 </ul>
 </section>

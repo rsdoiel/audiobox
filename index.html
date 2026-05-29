@@ -13,29 +13,49 @@
     <li><a href="INSTALL.html">INSTALL</a></li>
     <li><a href="user_manual.html">User Manual</a></li>
     <li><a href="about.html">About</a></li>
-    <li><a href="search.html">Search</a></li>
+    <!-- <li><a href="search.html">Search</a></li> -->
     <li><a href="https://github.com/rsdoiel/audiobox">GitHub</a></li>
 </ul>
 </nav>
 <section>
-<figure>
-<img src="audiobox.jpg"
-alt="Audiobox, this digital wax cylinder player of the 21st Century!" />
-<figcaption aria-hidden="true">Audiobox, this digital wax cylinder
-player of the 21st Century!</figcaption>
-</figure>
 <h1 id="audiobox">audiobox</h1>
-<p>audiobox is a go module that for managing audio metadata in an
-SQLite3 database. It uses “https://github.com/dhowden/tag” module to
-extract metadata that may be found in the audio file itself.</p>
+<p>audiobox is a Go + TypeScript application for managing an audio
+collection. It stores metadata in a SQLite3 database (using schema.org
+AudioObject / MusicRecording vocabulary), serves a web UI from an
+embedded file system, and streams audio over HTTP. It uses
+“https://github.com/dhowden/tag” to extract embedded metadata from audio
+files.</p>
 <p>This software is for Lourdes.</p>
 <h2 id="release-notes">Release Notes</h2>
 <ul>
-<li><p>version: 0.0.2</p></li>
-<li><p>status: concept</p></li>
-<li><p>released: 2026-05-02</p></li>
-<li><p>Web UI will initialize on first run</p></li>
-<li><p>TUI display bugs fixed</p></li>
+<li><p>version: 0.0.4</p></li>
+<li><p>status: active</p></li>
+<li><p>released: 2026-05-29</p></li>
+<li><p>Folders tab: two-level browse tree (root → sub-folder) with
+per-folder ON/OFF toggles; exclusion state is persisted server-side in
+audio.yaml and applied automatically to Albums, Artists, and Titles
+browse views</p></li>
+<li><p>Playlists: save the current queue as a named playlist; load or
+delete saved playlists from a new Playlists tab; backend schema adds
+playlists and playlist_tracks tables</p></li>
+<li><p>Network sharing: Share button enables LAN access on a chosen IPv4
+address; remoteAccessMiddleware restricts write operations to loopback
+clients; share address persisted in config</p></li>
+<li><p>Relative path storage: content_url values are stored relative to
+AudioDir; automatic migration on DB open converts any absolute
+paths</p></li>
+<li><p>Search improvements: grouped results (Albums / Artists / Titles /
+Tracks) with per-group Add All and per-item add/remove queue
+buttons</p></li>
+<li><p>Player UX: always-visible now-playing panel, folder context line,
+queue runtime estimate, per-item remove, auto-advance on track end,
+no-autoplay on queue add</p></li>
+<li><p>Scan / sweep elapsed-time indicator during async
+operations</p></li>
+<li><p>Bug fixes: scan/sweep/share status buttons now capture DOM
+elements at click time to prevent null-reference errors in async poll
+callbacks; share listener restart delayed 300 ms to ensure HTTP response
+is delivered before connection closes</p></li>
 </ul>
 <h3 id="authors">Authors</h3>
 <ul>
@@ -47,7 +67,7 @@ extract metadata that may be found in the audio file itself.</p>
 </ul>
 <h3 id="software-suggestions">Software Suggestions</h3>
 <ul>
-<li>CMTools &gt;= 0.0.40</li>
+<li>CMTools &gt;= 0.0.45b</li>
 <li>Pandoc &gt;= 3.1</li>
 <li>GNU Make &gt;= 3</li>
 <li>Deno &gt;= 2.4.0</li>

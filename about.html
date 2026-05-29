@@ -13,47 +13,70 @@
     <li><a href="INSTALL.html">INSTALL</a></li>
     <li><a href="user_manual.html">User Manual</a></li>
     <li><a href="about.html">About</a></li>
-    <li><a href="search.html">Search</a></li>
+    <!-- <li><a href="search.html">Search</a></li> -->
     <li><a href="https://github.com/rsdoiel/audiobox">GitHub</a></li>
 </ul>
 </nav>
 <section>
 <h1 id="about-this-software">About this software</h1>
-<h2 id="audiobox-0.0.3">audiobox 0.0.3</h2>
+<h2 id="audiobox-0.0.4">audiobox 0.0.4</h2>
 <ul>
-<li>Bug fixes for missing audio file metadata</li>
-<li>Web UI improvements including a new shuffle feature</li>
-<li>Improve app deployment for macOS</li>
+<li>Folders tab: two-level browse tree (root → sub-folder) with
+per-folder ON/OFF toggles; exclusion state is persisted server-side in
+audio.yaml and applied automatically to Albums, Artists, and Titles
+browse views</li>
+<li>Playlists: save the current queue as a named playlist; load or
+delete saved playlists from a new Playlists tab; backend schema adds
+playlists and playlist_tracks tables</li>
+<li>Network sharing: Share button enables LAN access on a chosen IPv4
+address; remoteAccessMiddleware restricts write operations to loopback
+clients; share address persisted in config</li>
+<li>Relative path storage: content_url values are stored relative to
+AudioDir; automatic migration on DB open converts any absolute
+paths</li>
+<li>Search improvements: grouped results (Albums / Artists / Titles /
+Tracks) with per-group Add All and per-item add/remove queue
+buttons</li>
+<li>Player UX: always-visible now-playing panel, folder context line,
+queue runtime estimate, per-item remove, auto-advance on track end,
+no-autoplay on queue add</li>
+<li>Scan / sweep elapsed-time indicator during async operations</li>
+<li>Bug fixes: scan/sweep/share status buttons now capture DOM elements
+at click time to prevent null-reference errors in async poll callbacks;
+share listener restart delayed 300 ms to ensure HTTP response is
+delivered before connection closes</li>
 </ul>
-<h3 id="authors">Authors</h3>
+<h2 id="authors">Authors</h2>
 <ul>
-<li>R. S. Doiel, <a href="https://orcid.org/0000-0003-0900-6903"
-class="uri">https://orcid.org/0000-0003-0900-6903</a></li>
+<li><a href="https://orcid.org/0000-0003-0900-6903">R. S. Doiel</a></li>
 </ul>
-<p>audiobox is a go module that for managing audio metadata in an
-SQLite3 database. It uses "https://github.com/dhowden/tag" module to
-extract metadata that may be found in the audio file itself.</p>
+<p>audiobox is a Go + TypeScript application for managing an audio
+collection. It stores metadata in a SQLite3 database (using schema.org
+AudioObject / MusicRecording vocabulary), serves a web UI from an
+embedded file system, and streams audio over HTTP. It uses
+“https://github.com/dhowden/tag” to extract embedded metadata from audio
+files.</p>
 <p>This software is for Lourdes.</p>
 <ul>
-<li>License: <a href="https://www.gnu.org/licenses/agpl-3.0.txt"
-class="uri">https://www.gnu.org/licenses/agpl-3.0.txt</a></li>
-<li>GitHub: <a href="https://github.com/rsdoiel/audiobox"
-class="uri">https://github.com/rsdoiel/audiobox</a></li>
-<li>Issues: <a href="https://github.com/rsdoiel/audiobox/issues"
-class="uri">https://github.com/rsdoiel/audiobox/issues</a></li>
+<li><a href="https://www.gnu.org/licenses/agpl-3.0.txt">License</a></li>
+<li><a href="https://github.com/rsdoiel/audiobox">Code Repository</a>
+<ul>
+<li><a href="https://github.com/rsdoiel/audiobox/issues">Issue
+Tracker</a></li>
+</ul></li>
 </ul>
-<h3 id="programming-languages">Programming languages</h3>
+<h2 id="programming-languages">Programming languages</h2>
 <ul>
 <li>Go &gt;= 1.26.2</li>
 <li>TypeScript</li>
 </ul>
-<h3 id="software-requirements">Software Requirements</h3>
+<h2 id="software-requirements">Software Requirements</h2>
 <ul>
 <li>Go &gt;= 1.26.2</li>
 </ul>
-<h3 id="software-suggestions">Software Suggestions</h3>
+<h2 id="software-suggestions">Software Suggestions</h2>
 <ul>
-<li>CMTools &gt;= 0.0.40</li>
+<li>CMTools &gt;= 0.0.45b</li>
 <li>Pandoc &gt;= 3.1</li>
 <li>GNU Make &gt;= 3</li>
 <li>Deno &gt;= 2.4.0</li>
