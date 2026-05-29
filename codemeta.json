@@ -12,9 +12,9 @@
     }
   ],
   "dateCreated": "2026-04-24",
-  "dateModified": "2026-05-05",
-  "datePublished": "2026-05-05",
-  "description": "audiobox is a go module that for managing audio metadata in an SQLite3 database. It uses \"https://github.com/dhowden/tag\" module to extract metadata that may be found in the audio file itself.\n\nThis software is for Lourdes.",
+  "dateModified": "2026-05-29",
+  "datePublished": "2026-05-29",
+  "description": "audiobox is a Go + TypeScript application for managing an audio collection. It stores metadata in a SQLite3 database (using schema.org AudioObject / MusicRecording vocabulary), serves a web UI from an embedded file system, and streams audio over HTTP. It uses \"https://github.com/dhowden/tag\" to extract embedded metadata from audio files.\n\nThis software is for Lourdes.",
   "name": "audiobox",
   "license": "https://www.gnu.org/licenses/agpl-3.0.txt",
   "programmingLanguage": [
@@ -25,16 +25,16 @@
     "Go >= 1.26.2"
   ],
   "softwareSuggestions": [
-    "CMTools >= 0.0.40",
+    "CMTools >= 0.0.45b",
     "Pandoc >= 3.1",
     "GNU Make >= 3",
     "Deno >= 2.4.0",
     "FFmpeg >= 6.0"
   ],
-  "version": "0.0.3",
+  "version": "0.0.4",
   "developmentStatus": "active",
   "issueTracker": "https://github.com/rsdoiel/audiobox/issues",
-  "releaseNotes": "- Bug fixes for missing audio file metadata\n- Web UI improvements including a new shuffle feature\n- Improve app deployment for macOS",
+  "releaseNotes": "- Folders tab: two-level browse tree (root → sub-folder) with per-folder ON/OFF toggles; exclusion state is persisted server-side in audio.yaml and applied automatically to Albums, Artists, and Titles browse views\n- Playlists: save the current queue as a named playlist; load or delete saved playlists from a new Playlists tab; backend schema adds playlists and playlist_tracks tables\n- Network sharing: Share button enables LAN access on a chosen IPv4 address; remoteAccessMiddleware restricts write operations to loopback clients; share address persisted in config\n- Relative path storage: content_url values are stored relative to AudioDir; automatic migration on DB open converts any absolute paths\n- Search improvements: grouped results (Albums / Artists / Titles / Tracks) with per-group Add All and per-item add/remove queue buttons\n- Player UX: always-visible now-playing panel, folder context line, queue runtime estimate, per-item remove, auto-advance on track end, no-autoplay on queue add\n- Scan / sweep elapsed-time indicator during async operations\n- Bug fixes: scan/sweep/share status buttons now capture DOM elements at click time to prevent null-reference errors in async poll callbacks; share listener restart delayed 300 ms to ensure HTTP response is delivered before connection closes",
   "copyrightYear": 2026,
   "copyrightHolder": "R. S. Doiel"
 }

@@ -1,11 +1,11 @@
 #!/bin/sh
-# generated with CMTools 0.0.3 e12e766
+# generated with CMTools 0.0.4 bef205d
 
 #
 # Set the package name and version to install
 #
 PACKAGE="audiobox"
-VERSION="0.0.3"
+VERSION="0.0.4"
 GIT_GROUP="rsdoiel"
 RELEASE="https://github.com/$GIT_GROUP/$PACKAGE/releases/tag/v$VERSION"
 if [ "$PKG_VERSION" != "" ]; then
