@@ -57,13 +57,15 @@ func resolveYAMLPath(path string) string {
  *   }
  */
 type CollectionConfig struct {
-	Name        string `yaml:"name"`
-	Description string `yaml:"description"`
-	Database    string `yaml:"database"`
-	AudioDir    string `yaml:"audioDir"`
-	Htdocs      string `yaml:"htdocs,omitempty"`
-	Port        int    `yaml:"port,omitempty"`
-	CORSOrigin  string `yaml:"corsOrigin,omitempty"`
+	Name         string `yaml:"name"`
+	Description  string `yaml:"description"`
+	Database     string `yaml:"database"`
+	AudioDir     string `yaml:"audioDir"`
+	Htdocs       string `yaml:"htdocs,omitempty"`
+	Port         int    `yaml:"port,omitempty"`
+	CORSOrigin   string `yaml:"corsOrigin,omitempty"`
+	ShareAddress    string   `yaml:"shareAddress,omitempty"`
+	ExcludedFolders []string `yaml:"excludedFolders,omitempty"`
 }
 
 /** LoadConfig reads a CollectionConfig from a YAML file on disk.
@@ -113,6 +115,44 @@ func SaveConfig(yamlPath string, cfg CollectionConfig) error {
 	return nil
 }
 
+/** SetShareAddress saves addr to the collection's YAML config and updates the in-memory
+ * configuration. Pass an empty string to clear the saved share address.
+ *
+ * Parameters:
+ *   addr (string) — IPv4 address to share on, or "" to clear
+ *
+ * Returns:
+ *   error — non-nil if the config file cannot be written
+ *
+ * Example:
+ *   if err := col.SetShareAddress("192.168.1.5"); err != nil { log.Fatal(err) }
+ */
+func (c *Collection) SetShareAddress(addr string) error {
+	c.cfg.ShareAddress = addr
+	return SaveConfig(c.cfgPath, c.cfg)
+}
+
+/** SetExcludedFolders saves the list of disabled folder paths to the collection config.
+ * Pass nil or an empty slice to clear all exclusions.
+ *
+ * Parameters:
+ *   paths ([]string) — folder paths (relative to AudioDir) that should be excluded
+ *
+ * Returns:
+ *   error — non-nil if the config file cannot be written
+ *
+ * Example:
+ *   if err := col.SetExcludedFolders([]string{"Music/Seasonal"}); err != nil { log.Fatal(err) }
+ */
+func (c *Collection) SetExcludedFolders(paths []string) error {
+	if len(paths) == 0 {
+		c.cfg.ExcludedFolders = nil
+	} else {
+		c.cfg.ExcludedFolders = paths
+	}
+	return SaveConfig(c.cfgPath, c.cfg)
+}
+
 /** NewCollection creates a new audio collection: it writes a YAML config file and initialises
  * the SQLite3 database in the current working directory.
  *
@@ -159,6 +199,10 @@ func NewCollection(name, audioDir, description string) (*Collection, error) {
 		return nil, err
 	}
 	if err := initSchema(db); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := migrateContentURLs(db, cfg.AudioDir); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -227,6 +271,10 @@ func LoadCollection(yamlPath string) (*Collection, error) {
 		return nil, err
 	}
 	if err := initSchema(db); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := migrateContentURLs(db, cfg.AudioDir); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -320,6 +368,10 @@ func InitAudiobox() (*Collection, error) {
 		db.Close()
 		return nil, err
 	}
+	if err := migrateContentURLs(db, cfg.AudioDir); err != nil {
+		db.Close()
+		return nil, err
+	}
 	return &Collection{db: db, cfg: cfg, cfgPath: yamlFile, isOpen: true}, nil
 }
 
@@ -363,6 +415,41 @@ func openDB(dbPath string) (*sql.DB, error) {
 	return db, nil
 }
 
+// migrateContentURLs converts any absolute content_url values in the database to paths
+// relative to audioDir. It is idempotent — already-relative paths are skipped.
+func migrateContentURLs(db *sql.DB, audioDir string) error {
+	rows, err := db.Query("SELECT id, content_url FROM audio_files WHERE content_url IS NOT NULL AND content_url != ''")
+	if err != nil {
+		return fmt.Errorf("migrate content_url: query: %w", err)
+	}
+	type rec struct{ id, url string }
+	var toUpdate []rec
+	for rows.Next() {
+		var r rec
+		if err := rows.Scan(&r.id, &r.url); err != nil {
+			rows.Close()
+			return fmt.Errorf("migrate content_url: scan: %w", err)
+		}
+		if filepath.IsAbs(r.url) {
+			toUpdate = append(toUpdate, r)
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("migrate content_url: iter: %w", err)
+	}
+	for _, r := range toUpdate {
+		rel, err := filepath.Rel(audioDir, r.url)
+		if err != nil {
+			return fmt.Errorf("migrate content_url: rel path for %s: %w", r.url, err)
+		}
+		if _, err := db.Exec("UPDATE audio_files SET content_url = ? WHERE id = ?", rel, r.id); err != nil {
+			return fmt.Errorf("migrate content_url: update %s: %w", r.id, err)
+		}
+	}
+	return nil
+}
+
 // initSchema creates the audio_files table and FTS5 search_index if they do not already exist.
 // It is safe to call on an existing database (all statements use IF NOT EXISTS).
 // It also applies incremental column migrations for older databases.
@@ -401,6 +488,17 @@ func initSchema(db *sql.DB) error {
 			recording_of,
 			artist_names,
 			tokenize='unicode61 remove_diacritics 1'
+		)`,
+		`CREATE TABLE IF NOT EXISTS playlists (
+			id      TEXT PRIMARY KEY,
+			name    TEXT NOT NULL,
+			created TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE IF NOT EXISTS playlist_tracks (
+			playlist_id TEXT NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+			position    INTEGER NOT NULL,
+			audio_id    TEXT NOT NULL REFERENCES audio_files(id) ON DELETE CASCADE,
+			PRIMARY KEY (playlist_id, position)
 		)`,
 	}
 	for _, s := range stmts {

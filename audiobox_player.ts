@@ -1,4 +1,4 @@
-import type { Agent, AlbumEntry, AudioInfo, CollectionStatus } from "./audiobox_api.ts";
+import type { Agent, AlbumEntry, AudioInfo, CollectionStatus, FolderEntry, PlaylistInfo, ShareStatus } from "./audiobox_api.ts";
 import { AudioInfoAPI } from "./audiobox_api.ts";
 
 // ---------------------------------------------------------------------------
@@ -42,6 +42,27 @@ export function formatDuration(iso: string): string {
   const mm = String(min).padStart(h > 0 ? 2 : 1, "0");
   const ss = String(sec).padStart(2, "0");
   return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
+/** parseDurationSecs converts an ISO 8601 duration string to a total seconds count.
+ *
+ * Parameters:
+ *   iso (string) — ISO 8601 duration, e.g. "PT3M45S" or "PT1H2M3S"
+ *
+ * Returns:
+ *   number — total seconds; 0 if the string is empty or unparseable
+ *
+ * Example:
+ *   parseDurationSecs("PT3M45S") // 225
+ */
+export function parseDurationSecs(iso: string): number {
+  if (!iso) return 0;
+  const m = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  if (!m) return 0;
+  const h = parseInt(m[1] ?? "0", 10);
+  const min = parseInt(m[2] ?? "0", 10);
+  const sec = parseInt(m[3] ?? "0", 10);
+  return h * 3600 + min * 60 + sec;
 }
 
 /** buildBrowseQuery constructs a field-scoped search query for a browse tab selection.
@@ -165,13 +186,59 @@ const STYLES = `
   cursor: pointer; font-size: 14px; line-height: 1.2;
 }
 .row-add-btn:hover { background: #e8f0fe; border-color: #4a90d9; color: #1a73e8; }
+.row-remove-btn {
+  flex-shrink: 0; padding: 2px 6px; border: 1px solid #ccc;
+  border-radius: 3px; background: #fff; color: #aaa;
+  cursor: pointer; font-size: 14px; line-height: 1.2;
+}
+.row-remove-btn:hover { background: #fde8e8; border-color: #e74c3c; color: #e74c3c; }
 .list-empty { padding: 10px; color: #888; text-align: center; font-style: italic; }
+
+/* ---- folder tree ---- */
+.folder-toggle-btn {
+  flex-shrink: 0; padding: 2px 8px; border: 1px solid #ccc;
+  border-radius: 3px; background: #f5f5f5; color: #999; cursor: pointer; font-size: 11px;
+}
+.folder-toggle-btn.on { background: #e8f5e9; color: #2e7d32; border-color: #a5d6a7; }
+.folder-toggle-btn:hover { opacity: 0.8; }
+.folder-child > .list-item-main .list-item-title,
+.folder-child > .list-item-main .list-item-sub { padding-left: 18px; }
+.folder-child { background: #fafafa; }
+
+/* ---- grouped search results ---- */
+.search-group { border-bottom: 1px solid #e8e8e8; }
+.search-group:last-child { border-bottom: none; }
+.search-group-header {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 10px; background: #f0f0f0; border-bottom: 1px solid #e8e8e8;
+}
+.search-group-label {
+  flex: 1; font-size: 11px; font-weight: 600; text-transform: uppercase; color: #666;
+}
+
+/* ---- drill-down bar ---- */
+.drill-back-bar {
+  display: flex; align-items: center; gap: 6px; padding: 6px 8px;
+  background: #f0f0f0; border-bottom: 1px solid #e0e0e0; font-size: 12px;
+}
+.drill-back-btn {
+  padding: 2px 8px; border: 1px solid #ccc; border-radius: 3px;
+  background: #fff; cursor: pointer; font-size: 12px; flex-shrink: 0;
+}
+.drill-back-btn:hover { background: #e8e8e8; }
+.drill-context-label {
+  flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #555;
+}
+.drill-add-all-btn {
+  padding: 2px 8px; border: 1px solid #4a90d9; border-radius: 3px;
+  background: #fff; color: #1a73e8; cursor: pointer; font-size: 12px; flex-shrink: 0;
+}
+.drill-add-all-btn:hover { background: #e8f0fe; }
 
 /* ---- now-playing panel ---- */
 .now-playing {
   padding: 10px; background: #fff; border-bottom: 1px solid #ddd;
 }
-.now-playing.hidden { display: none; }
 .track-title { font-weight: 600; font-size: 15px; }
 .track-sub { color: #555; font-size: 12px; margin-top: 2px; }
 .context-info { font-size: 11px; color: #888; margin: 4px 0 6px; }
@@ -181,12 +248,6 @@ const STYLES = `
   background: #fff; cursor: pointer; font-size: 16px; line-height: 1;
 }
 .ctrl-btn:disabled { opacity: 0.4; cursor: default; }
-.delete-track-btn {
-  margin-left: auto; padding: 3px 8px; border: 1px solid #e74c3c;
-  border-radius: 4px; background: #fff; color: #e74c3c;
-  cursor: pointer; font-size: 12px;
-}
-.delete-track-btn:hover { background: #e74c3c; color: #fff; }
 .progress {
   display: flex; align-items: center; gap: 6px;
   margin-bottom: 6px; font-size: 12px; color: #555;
@@ -200,6 +261,18 @@ const STYLES = `
 .queue-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
 .queue-title { font-weight: 600; font-size: 12px; text-transform: uppercase; color: #888; }
 .queue-actions { display: flex; gap: 4px; align-items: center; }
+.save-playlist-btn {
+  font-size: 11px; padding: 2px 6px; border: 1px solid #4a90d9;
+  border-radius: 3px; background: #fff; color: #1a73e8; cursor: pointer;
+}
+.save-playlist-btn:disabled { opacity: 0.4; cursor: default; }
+.save-playlist-btn:not(:disabled):hover { background: #e8f0fe; }
+.clear-queue-btn {
+  font-size: 11px; padding: 2px 6px; border: 1px solid #ccc;
+  border-radius: 3px; background: #fff; cursor: pointer;
+}
+.clear-queue-btn:disabled { opacity: 0.4; cursor: default; }
+.clear-queue-btn:not(:disabled):hover { background: #f0f0f0; }
 .shuffle-btn {
   font-size: 11px; padding: 2px 6px; border: 1px solid #ccc;
   border-radius: 3px; background: #fff; cursor: pointer;
@@ -216,11 +289,17 @@ const STYLES = `
 }
 .queue-item {
   padding: 5px 10px; cursor: pointer; border-bottom: 1px solid #f0f0f0;
-  font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-size: 12px; display: flex; align-items: center; gap: 4px;
 }
 .queue-item:hover { background: #f0f0f0; }
 .queue-item.current { background: #e8f0fe; font-weight: 600; }
 .queue-item:last-child { border-bottom: none; }
+.queue-item-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.queue-remove-btn {
+  flex-shrink: 0; padding: 0 4px; border: none;
+  background: transparent; color: #aaa; cursor: pointer; font-size: 14px;
+}
+.queue-remove-btn:hover { color: #e74c3c; }
 
 /* ---- library panel ---- */
 .library-panel { padding: 8px 10px 10px; }
@@ -245,6 +324,11 @@ const STYLES = `
 }
 .lib-status.error { color: #c0392b; }
 .lib-status.ok    { color: #27ae60; }
+.share-url-text { font-family: monospace; font-size: 11px; color: #27ae60; }
+.share-addr-select {
+  font-size: 11px; padding: 2px 4px; border: 1px solid #ccc;
+  border-radius: 3px; background: #fff;
+}
 `;
 
 /** PLAYER_TEMPLATE is the inner HTML injected into the component's shadow root.
@@ -263,6 +347,8 @@ export const PLAYER_TEMPLATE = `
     <button class="tab active" data-tab="albums">Albums</button>
     <button class="tab" data-tab="artists">Artists</button>
     <button class="tab" data-tab="titles">Titles</button>
+    <button class="tab" data-tab="folders">Folders</button>
+    <button class="tab" data-tab="playlists">Playlists</button>
   </div>
   <div class="search-bar">
     <input type="search" placeholder="Search..." />
@@ -273,15 +359,14 @@ export const PLAYER_TEMPLATE = `
   </div>
 </div>
 
-<div class="now-playing hidden">
-  <div class="track-title"></div>
+<div class="now-playing">
+  <div class="track-title">(No track loaded)</div>
   <div class="track-sub"></div>
   <div class="context-info"></div>
   <div class="controls">
     <button class="ctrl-btn prev-btn" title="Previous">⏮</button>
     <button class="ctrl-btn play-pause-btn" title="Play">▶</button>
     <button class="ctrl-btn next-btn" title="Next">⏭</button>
-    <button class="delete-track-btn" title="Remove from collection">🗑 Delete</button>
   </div>
   <div class="progress">
     <span class="current-time">0:00</span>
@@ -299,6 +384,8 @@ export const PLAYER_TEMPLATE = `
   <div class="queue-header">
     <span class="queue-title">Queue</span>
     <div class="queue-actions">
+      <button class="save-playlist-btn" disabled>Save as Playlist</button>
+      <button class="clear-queue-btn" disabled>Clear</button>
       <button class="shuffle-btn" title="Shuffle remaining tracks" disabled>⇄ Shuffle</button>
       <button class="toggle-queue-btn">Hide</button>
     </div>
@@ -321,6 +408,10 @@ export const PLAYER_TEMPLATE = `
     <div class="library-row">
       <button class="lib-btn sweep-btn">Sweep</button>
       <span class="lib-status sweep-status"></span>
+    </div>
+    <div class="library-row">
+      <button class="lib-btn share-btn">Share</button>
+      <span class="lib-status share-status"></span>
     </div>
   </div>
 </div>
@@ -361,7 +452,13 @@ export class AudioInfoPlayer extends _Base {
   private audioEl!: HTMLAudioElement;
   private queue: AudioInfo[] = [];
   private currentIndex = -1;
-  private contextLabel = "";
+  private drilldownTracks: AudioInfo[] = [];
+  private drilldownLabel = "";
+  private currentBrowseTab = "albums";
+  private folderCache: FolderEntry[] | null = null;
+  private folderEnabled = new Map<string, boolean>();
+  private searchResultsMap = new Map<string, AudioInfo>();
+  private searchGroups = new Map<string, AudioInfo[]>();
   private queueVisible = true;
   private libraryVisible = true;
   private seekDragging = false;
@@ -404,6 +501,9 @@ export class AudioInfoPlayer extends _Base {
       if (!s.initialized) {
         this._showInitScreen();
       } else {
+        this._initPlayer();
+        await this._loadFolderEnabledFromServer();
+        this._initShareStatus();
         this._loadTab("albums");
       }
     } catch (_e) {
@@ -442,6 +542,7 @@ export class AudioInfoPlayer extends _Base {
       try {
         await this.api.init();
         this._clearOverlay();
+        this._initPlayer();
         this._loadTab("albums");
       } catch (e) {
         btn.disabled = false;
@@ -471,21 +572,43 @@ export class AudioInfoPlayer extends _Base {
     browsePanel.style.display = "";
   }
 
+  // ---- player init --------------------------------------------------------
+
+  /** _initPlayer resets the now-playing panel to an idle state. */
+  private _initPlayer(): void {
+    this.qs(".track-title").textContent = "(No track loaded)";
+    this.qs(".track-sub").textContent = "";
+    this.qs(".context-info").textContent = "";
+    (this.qs<HTMLInputElement>(".seek-bar")).value = "0";
+    this.qs(".current-time").textContent = "0:00";
+    this.qs(".total-time").textContent = "0:00";
+    this._refreshPlayState(false);
+  }
+
   // ---- data loading -------------------------------------------------------
 
   private async _loadTab(tab: string): Promise<void> {
+    this.currentBrowseTab = tab;
     this.shadow.querySelectorAll<HTMLButtonElement>(".tab").forEach((b) => {
       b.classList.toggle("active", b.dataset.tab === tab);
     });
     this._setListContent('<div class="list-empty">Loading…</div>');
     try {
+      const excl = this._getExcludedFolderPaths();
       if (tab === "albums") {
-        const albums = await this.api.listAlbums();
+        const albums = await this.api.listAlbums(excl);
         this._renderAlbumList(albums);
+      } else if (tab === "folders") {
+        const folders = await this.api.listFolders();
+        this.folderCache = folders;
+        this._renderFolderList(folders);
+      } else if (tab === "playlists") {
+        const lists = await this.api.listPlaylists();
+        this._renderPlaylistList(lists);
       } else {
         const items = tab === "artists"
-          ? await this.api.listArtists()
-          : await this.api.listTitles();
+          ? await this.api.listArtists(excl)
+          : await this.api.listTitles(excl);
         this._renderStringList(items, tab);
       }
     } catch (e) {
@@ -493,15 +616,99 @@ export class AudioInfoPlayer extends _Base {
     }
   }
 
-  private async _runSearch(q: string): Promise<void> {
+  private async _runGroupedSearch(q: string): Promise<void> {
     if (!q.trim()) return;
+    const trimmed = q.trim();
     this._setListContent('<div class="list-empty">Searching…</div>');
+    this.searchResultsMap.clear();
+    this.searchGroups.clear();
     try {
-      const results = await this.api.search(q.trim());
-      this._renderAudioList(results, `Search: ${q.trim()}`, false);
+      const esc = (s: string) => s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+      const [albumTracks, artistTracks, titleTracks, anyTracks] = await Promise.all([
+        this.api.search(`album:"${esc(trimmed)}"`),
+        this.api.search(`artist:"${esc(trimmed)}"`),
+        this.api.search(`title:"${esc(trimmed)}"`),
+        this.api.search(trimmed),
+      ]);
+
+      // Deduplicate: each track ID appears only in the first group that claims it.
+      const seen = new Set<string>();
+      const dedup = (tracks: AudioInfo[]): AudioInfo[] => {
+        const out: AudioInfo[] = [];
+        for (const t of tracks) {
+          if (!seen.has(t.ID)) { seen.add(t.ID); out.push(t); }
+        }
+        return out;
+      };
+      const groups: Array<{ label: string; tracks: AudioInfo[] }> = [
+        { label: "Albums",  tracks: dedup(albumTracks) },
+        { label: "Artists", tracks: dedup(artistTracks) },
+        { label: "Titles",  tracks: dedup(titleTracks) },
+        { label: "Tracks",  tracks: dedup(anyTracks) },
+      ].filter((g) => g.tracks.length > 0);
+
+      for (const g of groups) {
+        this.searchGroups.set(g.label, g.tracks);
+        for (const t of g.tracks) this.searchResultsMap.set(t.ID, t);
+      }
+
+      const matchingFolders = this.folderCache
+        ? this.folderCache.filter((f) =>
+            f.name.toLowerCase().includes(trimmed.toLowerCase()) ||
+            f.path.toLowerCase().includes(trimmed.toLowerCase()))
+        : [];
+
+      if (groups.length === 0 && matchingFolders.length === 0) {
+        this._setListContent('<div class="list-empty">No results</div>');
+        return;
+      }
+      const html = [
+        ...groups.map((g) => this._renderSearchGroup(g.label, g.tracks)),
+        ...(matchingFolders.length > 0 ? [this._renderFolderSearchGroup(matchingFolders)] : []),
+      ].join("");
+      this._setListContent(html);
     } catch (e) {
       this._setListContent(`<div class="list-empty">${this._escHtml(String(e))}</div>`);
     }
+  }
+
+  private _renderSearchGroup(label: string, tracks: AudioInfo[]): string {
+    const header =
+      `<div class="search-group-header">` +
+      `<span class="search-group-label">${this._escHtml(label)} (${tracks.length})</span>` +
+      `<button class="drill-add-all-btn" title="Add all to queue" data-group-label="${this._escAttr(label)}">⊕ Add All</button>` +
+      `</div>`;
+    const items = tracks.map((t) => {
+      const sub = [formatArtists(t.ByArtist), t.InAlbum].filter(Boolean).join(" · ");
+      return (
+        `<div class="list-item">` +
+        `<div class="list-item-main">` +
+        `<div class="list-item-title">${this._escHtml(t.Name || "(untitled)")}</div>` +
+        (sub ? `<div class="list-item-sub">${this._escHtml(sub)}</div>` : "") +
+        `</div>` +
+        `<button class="row-add-btn" title="Add to queue" data-search-track-id="${this._escAttr(t.ID)}">⊕</button>` +
+        `<button class="row-remove-btn" title="Remove from queue" data-remove-track-id="${this._escAttr(t.ID)}">⊖</button>` +
+        `</div>`
+      );
+    }).join("");
+    return `<div class="search-group">${header}${items}</div>`;
+  }
+
+  private _renderFolderSearchGroup(folders: FolderEntry[]): string {
+    const header =
+      `<div class="search-group-header">` +
+      `<span class="search-group-label">Folders (${folders.length})</span>` +
+      `</div>`;
+    const items = folders.map((f) =>
+      `<div class="list-item">` +
+      `<div class="list-item-main">` +
+      `<div class="list-item-title">${this._escHtml(f.name)}</div>` +
+      `<div class="list-item-sub">${this._escHtml(f.path)} · ${f.trackCount} track${f.trackCount !== 1 ? "s" : ""}</div>` +
+      `</div>` +
+      `<button class="row-add-btn" title="Add to queue" data-add-tab="folders" data-add-item="${this._escAttr(f.path)}">⊕</button>` +
+      `</div>`
+    ).join("");
+    return `<div class="search-group">${header}${items}</div>`;
   }
 
   // ---- list rendering -----------------------------------------------------
@@ -550,42 +757,179 @@ export class AudioInfoPlayer extends _Base {
     );
   }
 
-  private _renderAudioList(tracks: AudioInfo[], context: string, autoPlay: boolean): void {
-    this.queue = tracks;
-    this.contextLabel = context;
-    if (tracks.length === 0) {
-      this._setListContent('<div class="list-empty">No results</div>');
-      this._updateQueuePanel();
+  private _renderFolderList(folders: FolderEntry[]): void {
+    if (folders.length === 0) {
+      this._setListContent('<div class="list-empty">No folders found</div>');
+      return;
+    }
+
+    // Derive unique root names (first path component).
+    const rootNames = new Set<string>();
+    for (const f of folders) {
+      const first = f.path.replace(/\\/g, "/").split("/")[0];
+      if (first) rootNames.add(first);
+    }
+    const roots = [...rootNames].sort();
+
+    let html = "";
+    for (const root of roots) {
+      const rootEnabled = this._isFolderEnabled(root);
+
+      // Sum tracks under this root.
+      const rootFolders = folders.filter(
+        (f) => f.path === root || f.path.startsWith(root + "/"),
+      );
+      const rootCount = rootFolders.reduce((s, f) => s + f.trackCount, 0);
+
+      // Build level-2 child map: "root/child" → trackCount.
+      const childMap = new Map<string, number>();
+      for (const f of rootFolders) {
+        const rest = f.path.startsWith(root + "/")
+          ? f.path.slice(root.length + 1)
+          : "";
+        if (!rest) continue; // tracks directly in root — counted but no child row
+        const childName = rest.split("/")[0];
+        const childPath = root + "/" + childName;
+        childMap.set(childPath, (childMap.get(childPath) ?? 0) + f.trackCount);
+      }
+      const children = [...childMap.entries()]
+        .map(([path, count]) => ({ path, count }))
+        .sort((a, b) => a.path.localeCompare(b.path));
+
+      const tCls = rootEnabled ? " on" : "";
+      const addDis = rootEnabled ? "" : " disabled";
+      html +=
+        `<div class="list-item" data-browse-tab="folders" data-browse-item="${this._escAttr(root)}">` +
+        `<div class="list-item-main">` +
+        `<div class="list-item-title">${this._escHtml(root)}</div>` +
+        `<div class="list-item-sub">${rootCount} track${rootCount !== 1 ? "s" : ""}` +
+        (children.length > 0 ? ` · ${children.length} sub-folder${children.length !== 1 ? "s" : ""}` : "") +
+        `</div></div>` +
+        `<button class="folder-toggle-btn${tCls}" data-toggle-folder="${this._escAttr(root)}">${rootEnabled ? "ON" : "OFF"}</button>` +
+        `<button class="row-add-btn"${addDis} title="Add to queue" data-add-tab="folders" data-add-item="${this._escAttr(root)}">⊕</button>` +
+        `</div>`;
+
+      for (const child of children) {
+        const childName = this._deslugify(child.path.split("/").pop() ?? child.path);
+        // Child is effectively enabled only when root is also enabled.
+        const childSelfEnabled = this._isFolderEnabled(child.path);
+        const childEnabled = rootEnabled && childSelfEnabled;
+        const cTCls = childSelfEnabled ? " on" : "";
+        const cAddDis = childEnabled ? "" : " disabled";
+        html +=
+          `<div class="list-item folder-child" data-browse-tab="folders" data-browse-item="${this._escAttr(child.path)}">` +
+          `<div class="list-item-main">` +
+          `<div class="list-item-title">${this._escHtml(childName)}</div>` +
+          `<div class="list-item-sub">${child.count} track${child.count !== 1 ? "s" : ""}</div>` +
+          `</div>` +
+          `<button class="folder-toggle-btn${cTCls}" data-toggle-folder="${this._escAttr(child.path)}" data-toggle-root="${this._escAttr(root)}">${childSelfEnabled ? "ON" : "OFF"}</button>` +
+          `<button class="row-add-btn"${cAddDis} title="Add to queue" data-add-tab="folders" data-add-item="${this._escAttr(child.path)}">⊕</button>` +
+          `</div>`;
+      }
+    }
+
+    this._setListContent(html);
+  }
+
+  private _renderPlaylistList(lists: PlaylistInfo[]): void {
+    if (lists.length === 0) {
+      this._setListContent('<div class="list-empty">No saved playlists</div>');
       return;
     }
     this._setListContent(
-      tracks
-        .map((t, i) => {
-          const sub = [formatArtists(t.ByArtist), t.InAlbum].filter(Boolean).join(" · ");
-          return (
-            `<div class="list-item" data-queue-index="${i}">` +
-            `<div class="list-item-main">` +
-            `<div class="list-item-title">${this._escHtml(t.Name || "(untitled)")}</div>` +
-            (sub ? `<div class="list-item-sub">${this._escHtml(sub)}</div>` : "") +
-            `</div>` +
-            `</div>`
-          );
-        })
-        .join(""),
+      lists.map((pl) =>
+        `<div class="list-item">` +
+        `<div class="list-item-main">` +
+        `<div class="list-item-title">${this._escHtml(pl.name)}</div>` +
+        `<div class="list-item-sub">${pl.trackCount} track${pl.trackCount !== 1 ? "s" : ""}</div>` +
+        `</div>` +
+        `<button class="row-add-btn" title="Load playlist into queue" data-playlist-load="${this._escAttr(pl.id)}">▶</button>` +
+        `<button class="row-remove-btn" title="Delete playlist" data-playlist-delete="${this._escAttr(pl.id)}">✕</button>` +
+        `</div>`
+      ).join(""),
     );
-    this._updateQueuePanel();
-    if (autoPlay) this._playIndex(0);
+  }
+
+  /** _showDrilldown renders a track list inside the list panel with a back bar.
+   * Stores the tracks in drilldownTracks for add-all and per-item add actions.
+   * Does NOT modify the queue.
+   *
+   * Parameters:
+   *   tracks (AudioInfo[]) — tracks to display
+   *   label  (string)      — descriptive label shown in the back bar
+   */
+  private _showDrilldown(tracks: AudioInfo[], label: string): void {
+    this.drilldownTracks = tracks;
+    this.drilldownLabel = label;
+    const backBar =
+      `<div class="drill-back-bar">` +
+      `<button class="drill-back-btn">← Back</button>` +
+      `<span class="drill-context-label">${this._escHtml(label)}</span>` +
+      (tracks.length > 0
+        ? `<button class="drill-add-all-btn">⊕ Add All</button>`
+        : "") +
+      `</div>`;
+    if (tracks.length === 0) {
+      this._setListContent(backBar + '<div class="list-empty">No results</div>');
+      return;
+    }
+    const items = tracks
+      .map((t, i) => {
+        const sub = [formatArtists(t.ByArtist), t.InAlbum].filter(Boolean).join(" · ");
+        return (
+          `<div class="list-item">` +
+          `<div class="list-item-main">` +
+          `<div class="list-item-title">${this._escHtml(t.Name || "(untitled)")}</div>` +
+          (sub ? `<div class="list-item-sub">${this._escHtml(sub)}</div>` : "") +
+          `</div>` +
+          `<button class="row-add-btn" title="Add to queue" data-drilldown-index="${i}">⊕</button>` +
+          `</div>`
+        );
+      })
+      .join("");
+    this._setListContent(backBar + items);
+  }
+
+  /** _drillDownFolder fetches all tracks under a folder path and renders them in the list panel. */
+  private _drillDownFolder(path: string): void {
+    this._setListContent('<div class="list-empty">Loading…</div>');
+    const parts = path.replace(/\\/g, "/").split("/").filter(Boolean);
+    const label = `📁 ${parts[parts.length - 1] || path}`;
+    this.api.listFolderTracks(path)
+      .then((tracks) => this._showDrilldown(tracks, label))
+      .catch((err) => this._setListContent(
+        `<div class="list-empty">${this._escHtml(String(err))}</div>`,
+      ));
+  }
+
+  /** _drillDown fetches tracks for a browse item and renders them in the list panel. */
+  private _drillDown(tab: string, item: string): void {
+    this._setListContent('<div class="list-empty">Loading…</div>');
+    const q = buildBrowseQuery(tab, item);
+    const label = `${tab}: ${item}`;
+    this.api.search(q)
+      .then((tracks) => this._showDrilldown(tracks, label))
+      .catch((err) => this._setListContent(
+        `<div class="list-empty">${this._escHtml(String(err))}</div>`,
+      ));
   }
 
   /** _addToQueue appends tracks to the playback queue without starting playback.
-   * Existing playback is unaffected; the user presses play when ready.
+   * When the queue was empty the first track is primed in the player but not played.
    *
    * Parameters:
    *   tracks (AudioInfo[]) — tracks to append
    */
   private _addToQueue(tracks: AudioInfo[]): void {
     if (tracks.length === 0) return;
+    const wasEmpty = this.queue.length === 0 && this.currentIndex < 0;
     this.queue = [...this.queue, ...tracks];
+    if (wasEmpty) {
+      this.currentIndex = 0;
+      this.audioEl.src = this.api.audioUrl(this.queue[0].ID);
+      this._showNowPlaying(this.queue[0]);
+      this._refreshPlayState(false);
+    }
     this._updateQueuePanel();
   }
 
@@ -619,15 +963,12 @@ export class AudioInfoPlayer extends _Base {
   }
 
   private _showNowPlaying(info: AudioInfo): void {
-    this.qs(".now-playing").classList.remove("hidden");
     this.qs(".track-title").textContent = info.Name || "(untitled)";
     const sub = [formatArtists(info.ByArtist), info.InAlbum].filter(Boolean).join(" — ");
     this.qs(".track-sub").textContent = sub;
-    this.qs(".context-info").textContent = this.contextLabel
-      ? `From: ${this.contextLabel}`
-      : "";
-    const deleteBtn = this.qs<HTMLButtonElement>(".delete-track-btn");
-    deleteBtn.dataset.trackId = info.ID;
+    const parts = (info.ContentURL ?? "").replace(/\\/g, "/").split("/");
+    const folder = parts.length >= 2 ? parts[parts.length - 2] : "";
+    this.qs(".context-info").textContent = folder ? `📁 ${folder}` : "";
   }
 
   private _refreshPlayState(playing: boolean): void {
@@ -641,17 +982,30 @@ export class AudioInfoPlayer extends _Base {
     const list = this.qs(".queue-list");
     const title = this.qs(".queue-title");
     const shuffleBtn = this.qs<HTMLButtonElement>(".shuffle-btn");
+    const clearBtn = this.qs<HTMLButtonElement>(".clear-queue-btn");
+    const savePlaylistBtn = this.qs<HTMLButtonElement>(".save-playlist-btn");
     shuffleBtn.disabled = this.queue.length === 0;
+    clearBtn.disabled = this.queue.length === 0;
+    savePlaylistBtn.disabled = this.queue.length === 0;
     if (this.queue.length === 0) {
       list.innerHTML = '<div class="list-empty">No tracks queued</div>';
       title.textContent = "Queue";
       return;
     }
-    title.textContent = `Queue (${this.queue.length})`;
+    const totalSecs = this.queue.reduce((sum, t) => sum + parseDurationSecs(t.Duration), 0);
+    const totalStr = totalSecs > 0 ? this._fmtSecs(totalSecs) : "";
+    title.textContent = totalStr
+      ? `Queue (${this.queue.length} · ~${totalStr})`
+      : `Queue (${this.queue.length})`;
     list.innerHTML = this.queue
       .map((t, i) => {
         const cls = i === this.currentIndex ? " current" : "";
-        return `<div class="queue-item${cls}" data-queue-index="${i}">${this._escHtml(t.Name || "(untitled)")}</div>`;
+        return (
+          `<div class="queue-item${cls}" data-queue-index="${i}">` +
+          `<span class="queue-item-name">${this._escHtml(t.Name || "(untitled)")}</span>` +
+          `<button class="queue-remove-btn" data-remove-index="${i}">×</button>` +
+          `</div>`
+        );
       })
       .join("");
   }
@@ -662,10 +1016,14 @@ export class AudioInfoPlayer extends _Base {
     this.audioEl.addEventListener("play", () => this._refreshPlayState(true));
     this.audioEl.addEventListener("pause", () => this._refreshPlayState(false));
     this.audioEl.addEventListener("ended", () => {
-      if (this.currentIndex < this.queue.length - 1) {
-        this._playIndex(this.currentIndex + 1);
+      this.queue.splice(this.currentIndex, 1);
+      if (this.currentIndex < this.queue.length) {
+        this._playIndex(this.currentIndex);
       } else {
+        this.currentIndex = -1;
         this._refreshPlayState(false);
+        this._initPlayer();
+        this._updateQueuePanel();
       }
     });
     this.audioEl.addEventListener("timeupdate", () => {
@@ -692,19 +1050,98 @@ export class AudioInfoPlayer extends _Base {
 
     // Search
     const searchInput = this.qs<HTMLInputElement>(".search-bar input");
-    this.qs(".search-btn").addEventListener("click", () => this._runSearch(searchInput.value));
+    this.qs(".search-btn").addEventListener("click", () => this._runGroupedSearch(searchInput.value));
     searchInput.addEventListener("keydown", (e: Event) => {
-      if ((e as KeyboardEvent).key === "Enter") this._runSearch(searchInput.value);
+      if ((e as KeyboardEvent).key === "Enter") this._runGroupedSearch(searchInput.value);
     });
 
     // Browse/result list clicks (delegated on list-panel)
     this.qs(".list-panel").addEventListener("click", (e: Event) => {
+      // Folder toggle button.
+      const toggleBtn = (e.target as Element).closest<HTMLElement>("[data-toggle-folder]");
+      if (toggleBtn) {
+        const path = toggleBtn.dataset.toggleFolder!;
+        this.folderEnabled.set(path, !this._isFolderEnabled(path));
+        // Persist to server (fire-and-forget; log errors only).
+        this.api.setExcludedFolders(this._getExcludedFolderPaths())
+          .catch((e) => console.warn("save folder exclusions:", e));
+        // Re-render the folder tree immediately.
+        if (this.folderCache) this._renderFolderList(this.folderCache);
+        // Refresh whichever browse tab is active so exclusions take effect.
+        const activeTab = this.shadow.querySelector<HTMLButtonElement>(".tab.active");
+        const activeTabName = activeTab?.dataset.tab;
+        if (activeTabName && activeTabName !== "folders") {
+          this._loadTab(activeTabName);
+        }
+        return;
+      }
+
+      // Playlist load button.
+      const plLoadBtn = (e.target as Element).closest<HTMLElement>("[data-playlist-load]");
+      if (plLoadBtn) {
+        const id = plLoadBtn.dataset.playlistLoad!;
+        this.api.loadPlaylist(id)
+          .then((tracks) => this._addToQueue(tracks))
+          .catch((err) => console.warn("load playlist:", String(err)));
+        return;
+      }
+
+      // Playlist delete button.
+      const plDelBtn = (e.target as Element).closest<HTMLElement>("[data-playlist-delete]");
+      if (plDelBtn) {
+        const id = plDelBtn.dataset.playlistDelete!;
+        if (!confirm("Delete this playlist?")) return;
+        this.api.deletePlaylist(id)
+          .then(() => this._loadTab("playlists"))
+          .catch((err) => console.warn("delete playlist:", String(err)));
+        return;
+      }
+
+      // ⊖ remove-from-queue button.
+      const removeBtn = (e.target as Element).closest<HTMLElement>(".row-remove-btn");
+      if (removeBtn) {
+        const id = removeBtn.dataset.removeTrackId ?? "";
+        const idx = this.queue.findIndex((t) => t.ID === id);
+        if (idx !== -1) {
+          const wasPlaying = idx === this.currentIndex;
+          this.queue.splice(idx, 1);
+          if (wasPlaying) {
+            this.audioEl.pause();
+            this.audioEl.src = "";
+            this.currentIndex = -1;
+            this._initPlayer();
+          } else if (idx < this.currentIndex) {
+            this.currentIndex--;
+          }
+          this._updateQueuePanel();
+        }
+        return;
+      }
+
       // ⊕ add-to-queue button takes priority over the row click.
       const addBtn = (e.target as Element).closest<HTMLElement>(".row-add-btn");
-      if (addBtn) {
+      if (addBtn && !(addBtn as HTMLButtonElement).disabled) {
+        // Search result: track identified by ID stored in the results map.
+        const searchId = addBtn.dataset.searchTrackId;
+        if (searchId !== undefined) {
+          const track = this.searchResultsMap.get(searchId);
+          if (track) this._addToQueue([track]);
+          return;
+        }
+        // Drilldown: track identified by index into drilldownTracks.
+        const ddIdx = addBtn.dataset.drilldownIndex;
+        if (ddIdx !== undefined) {
+          const track = this.drilldownTracks[parseInt(ddIdx, 10)];
+          if (track) this._addToQueue([track]);
+          return;
+        }
         const tab = addBtn.dataset.addTab;
         const item = addBtn.dataset.addItem ?? "";
-        if (tab) {
+        if (tab === "folders") {
+          this.api.listFolderTracks(item)
+            .then((tracks) => this._addToQueue(tracks))
+            .catch((err) => console.warn("add folder to queue:", String(err)));
+        } else if (tab) {
           const q = buildBrowseQuery(tab, item);
           this.api.search(q)
             .then((tracks) => this._addToQueue(tracks))
@@ -713,27 +1150,71 @@ export class AudioInfoPlayer extends _Base {
         return;
       }
 
+      // Back button → return to current browse tab.
+      if ((e.target as Element).closest(".drill-back-btn")) {
+        this._loadTab(this.currentBrowseTab);
+        return;
+      }
+
+      // Add-all button — search group (has data-group-label) or drilldown.
+      const addAllBtn = (e.target as Element).closest<HTMLElement>(".drill-add-all-btn");
+      if (addAllBtn) {
+        if (addAllBtn.dataset.groupLabel !== undefined) {
+          this._addToQueue(this.searchGroups.get(addAllBtn.dataset.groupLabel) ?? []);
+        } else {
+          this._addToQueue(this.drilldownTracks);
+        }
+        return;
+      }
+
+      // Browse row click → drill down into tracks.
       const el = (e.target as Element).closest<HTMLElement>(".list-item");
       if (!el) return;
       if (el.dataset.browseTab) {
-        const q = buildBrowseQuery(el.dataset.browseTab, el.dataset.browseItem ?? "");
-        const label = `${el.dataset.browseTab}: ${el.dataset.browseItem}`;
-        this._setListContent('<div class="list-empty">Loading…</div>');
-        this.api
-          .search(q)
-          .then((results) => this._renderAudioList(results, label, true))
-          .catch((err) => this._setListContent(`<div class="list-empty">${this._escHtml(String(err))}</div>`));
-      } else if (el.dataset.queueIndex !== undefined) {
-        this._playIndex(parseInt(el.dataset.queueIndex, 10));
+        if (el.dataset.browseTab === "folders") {
+          this._drillDownFolder(el.dataset.browseItem ?? "");
+        } else {
+          this._drillDown(el.dataset.browseTab, el.dataset.browseItem ?? "");
+        }
       }
     });
 
     // Queue clicks (delegated on queue-list)
     this.qs(".queue-list").addEventListener("click", (e: Event) => {
+      // Remove button
+      const removeBtn = (e.target as Element).closest<HTMLElement>(".queue-remove-btn");
+      if (removeBtn) {
+        const idx = parseInt(removeBtn.dataset.removeIndex ?? "-1", 10);
+        if (idx < 0 || idx >= this.queue.length) return;
+        const wasPlaying = idx === this.currentIndex;
+        this.queue.splice(idx, 1);
+        if (wasPlaying) {
+          this.audioEl.pause();
+          this.audioEl.src = "";
+          this.currentIndex = -1;
+          this._initPlayer();
+        } else if (idx < this.currentIndex) {
+          this.currentIndex--;
+        }
+        this._updateQueuePanel();
+        return;
+      }
+
+      // Queue item click → play that track
       const el = (e.target as Element).closest<HTMLElement>(".queue-item");
       if (el?.dataset.queueIndex !== undefined) {
         this._playIndex(parseInt(el.dataset.queueIndex, 10));
       }
+    });
+
+    // Clear queue
+    this.qs(".clear-queue-btn").addEventListener("click", () => {
+      this.queue = [];
+      this.currentIndex = -1;
+      this.audioEl.pause();
+      this.audioEl.src = "";
+      this._initPlayer();
+      this._updateQueuePanel();
     });
 
     // Playback buttons
@@ -750,32 +1231,6 @@ export class AudioInfoPlayer extends _Base {
     });
     this.qs(".next-btn").addEventListener("click", () => {
       if (this.currentIndex < this.queue.length - 1) this._playIndex(this.currentIndex + 1);
-    });
-
-    // Delete current track
-    this.qs(".delete-track-btn").addEventListener("click", async () => {
-      const btn = this.qs<HTMLButtonElement>(".delete-track-btn");
-      const id = btn.dataset.trackId;
-      if (!id) return;
-      const name = this.qs(".track-title").textContent || "this track";
-      if (!confirm(`Remove "${name}" from the collection?\n\nThe audio file on disk will not be deleted.`)) return;
-      try {
-        await this.api.deleteRecord(id);
-        // Remove from queue and advance if needed.
-        this.queue.splice(this.currentIndex, 1);
-        if (this.queue.length === 0) {
-          this.currentIndex = -1;
-          this.audioEl.pause();
-          this.audioEl.src = "";
-          this.qs(".now-playing").classList.add("hidden");
-        } else {
-          const nextIndex = Math.min(this.currentIndex, this.queue.length - 1);
-          this._playIndex(nextIndex);
-        }
-        this._updateQueuePanel();
-      } catch (e) {
-        alert(`Delete failed: ${String(e)}`);
-      }
     });
 
     // Seek bar
@@ -815,14 +1270,162 @@ export class AudioInfoPlayer extends _Base {
     // Shuffle queue
     this.qs(".shuffle-btn").addEventListener("click", () => this._shuffleQueue());
 
-    // Scan
-    this.qs(".scan-btn").addEventListener("click", () => this._startScan());
+    // Save queue as playlist
+    this.qs(".save-playlist-btn").addEventListener("click", () => this._saveQueueAsPlaylist());
 
-    // Sweep
+    // Scan / Sweep — capture elements here for the same reason as share.
+    this.qs(".scan-btn").addEventListener("click", () => this._startScan());
     this.qs(".sweep-btn").addEventListener("click", () => this._startSweep());
+
+    // Share — capture elements once so async handlers never re-query a potentially stale DOM.
+    const shareBtn = this.qs<HTMLButtonElement>(".share-btn");
+    const shareStatus = this.qs<HTMLElement>(".share-status");
+    shareBtn.addEventListener("click", async () => {
+      shareBtn.disabled = true;
+      shareStatus.className = "lib-status";
+      shareStatus.textContent = "Loading…";
+      let addresses: string[];
+      try {
+        addresses = await this.api.shareAddresses();
+      } catch (e) {
+        shareBtn.disabled = false;
+        shareStatus.className = "lib-status error";
+        shareStatus.textContent = String(e);
+        return;
+      }
+      if (addresses.length === 0) {
+        shareBtn.disabled = false;
+        shareStatus.className = "lib-status error";
+        shareStatus.textContent = "No network interfaces available";
+        return;
+      }
+      if (addresses.length === 1) {
+        await this._enableShare(shareBtn, shareStatus, addresses[0]);
+      } else {
+        shareBtn.disabled = false;
+        shareStatus.textContent = "";
+        this._showSharePicker(shareBtn, shareStatus, addresses);
+      }
+    });
 
     // Shutdown
     this.qs(".shutdown-btn").addEventListener("click", () => this._requestShutdown());
+  }
+
+  // ---- share actions ------------------------------------------------------
+
+  private async _initShareStatus(): Promise<void> {
+    // Capture elements here so _applyShareStatus has stable refs from startup.
+    const shareBtn = this.qs<HTMLButtonElement>(".share-btn");
+    const shareStatus = this.qs<HTMLElement>(".share-status");
+    try {
+      const s = await this.api.shareStatus();
+      this._applyShareStatus(shareBtn, shareStatus, s);
+    } catch (_e) {
+      // Server may not support share endpoints — silently skip.
+    }
+  }
+
+  private _applyShareStatus(
+    shareBtn: HTMLButtonElement,
+    shareStatus: HTMLElement,
+    s: ShareStatus,
+  ): void {
+    if (s.sharing) {
+      shareBtn.disabled = true;
+      shareBtn.textContent = "Sharing";
+      shareStatus.className = "lib-status ok";
+      shareStatus.innerHTML =
+        `<span class="share-url-text">${this._escHtml(s.share_url)}</span> ` +
+        `<button class="share-copy-btn lib-btn">Copy</button> ` +
+        `<button class="share-disable-btn lib-btn">Disable</button>`;
+      shareStatus.querySelector(".share-copy-btn")?.addEventListener("click", () => {
+        navigator.clipboard?.writeText(s.share_url).catch(() => {});
+      });
+      shareStatus.querySelector(".share-disable-btn")?.addEventListener("click", async () => {
+        shareStatus.textContent = "Stopping…";
+        try {
+          await this.api.shareOff();
+          await this._pollShareStatus(shareBtn, shareStatus, false);
+        } catch (e) {
+          shareStatus.className = "lib-status error";
+          shareStatus.textContent = String(e);
+        }
+      });
+    } else {
+      shareBtn.disabled = false;
+      shareBtn.textContent = "Share";
+      shareStatus.className = "lib-status";
+      shareStatus.innerHTML = "";
+    }
+  }
+
+  private async _enableShare(
+    shareBtn: HTMLButtonElement,
+    shareStatus: HTMLElement,
+    address: string,
+  ): Promise<void> {
+    shareStatus.className = "lib-status";
+    shareStatus.textContent = "Starting…";
+    try {
+      await this.api.shareOn(address);
+      await this._pollShareStatus(shareBtn, shareStatus, true);
+    } catch (e) {
+      shareBtn.disabled = false;
+      shareStatus.className = "lib-status error";
+      shareStatus.textContent = String(e);
+    }
+  }
+
+  private _showSharePicker(
+    shareBtn: HTMLButtonElement,
+    shareStatus: HTMLElement,
+    addresses: string[],
+  ): void {
+    const opts = addresses
+      .map((a) => `<option value="${this._escAttr(a)}">${this._escHtml(a)}</option>`)
+      .join("");
+    shareStatus.className = "lib-status";
+    shareStatus.innerHTML =
+      `<select class="share-addr-select">${opts}</select> ` +
+      `<button class="share-confirm-btn lib-btn">Enable</button> ` +
+      `<button class="share-cancel-btn lib-btn">Cancel</button>`;
+    shareStatus.querySelector(".share-confirm-btn")?.addEventListener("click", async () => {
+      const sel = shareStatus.querySelector<HTMLSelectElement>(".share-addr-select");
+      const addr = sel?.value ?? "";
+      if (addr) await this._enableShare(shareBtn, shareStatus, addr);
+    });
+    shareStatus.querySelector(".share-cancel-btn")?.addEventListener("click", () => {
+      shareBtn.disabled = false;
+      shareStatus.className = "lib-status";
+      shareStatus.innerHTML = "";
+    });
+  }
+
+  private _pollShareStatus(
+    shareBtn: HTMLButtonElement,
+    shareStatus: HTMLElement,
+    waitFor: boolean,
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      let attempts = 0;
+      const timer = setInterval(async () => {
+        attempts++;
+        if (attempts > 30) {
+          clearInterval(timer);
+          reject(new Error("timed out waiting for share status change"));
+          return;
+        }
+        try {
+          const s = await this.api.shareStatus();
+          if (s.sharing === waitFor) {
+            clearInterval(timer);
+            this._applyShareStatus(shareBtn, shareStatus, s);
+            resolve();
+          }
+        } catch (_e) { /* keep polling */ }
+      }, 1000) as unknown as number;
+    });
   }
 
   // ---- library actions ----------------------------------------------------
@@ -834,9 +1437,8 @@ export class AudioInfoPlayer extends _Base {
     status.className = "lib-status";
     status.textContent = "Starting…";
     this.api.startScan()
-      .then(() => {
-        status.textContent = "Scanning…";
-        this._pollScan();
+      .then((s) => {
+        this._pollScan(btn, status, new Date(s.started_at).getTime());
       })
       .catch((e) => {
         btn.disabled = false;
@@ -845,19 +1447,16 @@ export class AudioInfoPlayer extends _Base {
       });
   }
 
-  private _pollScan(): void {
+  private _pollScan(btn: HTMLButtonElement, status: HTMLElement, startedAt: number): void {
     if (this.scanPollTimer) clearInterval(this.scanPollTimer);
     this.scanPollTimer = setInterval(async () => {
       try {
         const s = await this.api.scanStatus();
-        const btn = this.qs<HTMLButtonElement>(".scan-btn");
-        const status = this.qs<HTMLElement>(".scan-status");
         if (s.status === "completed") {
           clearInterval(this.scanPollTimer);
           btn.disabled = false;
           status.className = "lib-status ok";
           status.textContent = "Scan complete";
-          // Refresh the current browse tab.
           const activeTab = this.shadow.querySelector<HTMLButtonElement>(".tab.active");
           if (activeTab?.dataset.tab) this._loadTab(activeTab.dataset.tab);
         } else if (s.status === "error") {
@@ -865,11 +1464,17 @@ export class AudioInfoPlayer extends _Base {
           btn.disabled = false;
           status.className = "lib-status error";
           status.textContent = `Error: ${s.error ?? "unknown"}`;
+        } else if (s.status === "idle") {
+          clearInterval(this.scanPollTimer);
+          btn.disabled = false;
+          status.className = "lib-status";
+          status.textContent = "";
         } else {
-          status.textContent = "Scanning…";
+          const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+          status.textContent = `Scanning… (${elapsed}s)`;
         }
-      } catch (_e) {
-        // transient network error — keep polling
+      } catch (e) {
+        console.warn("scan poll:", e);
       }
     }, 1500) as unknown as number;
   }
@@ -881,9 +1486,8 @@ export class AudioInfoPlayer extends _Base {
     status.className = "lib-status";
     status.textContent = "Starting…";
     this.api.startSweep()
-      .then(() => {
-        status.textContent = "Sweeping…";
-        this._pollSweep();
+      .then((s) => {
+        this._pollSweep(btn, status, new Date(s.started_at).getTime());
       })
       .catch((e) => {
         btn.disabled = false;
@@ -892,13 +1496,11 @@ export class AudioInfoPlayer extends _Base {
       });
   }
 
-  private _pollSweep(): void {
+  private _pollSweep(btn: HTMLButtonElement, status: HTMLElement, startedAt: number): void {
     if (this.sweepPollTimer) clearInterval(this.sweepPollTimer);
     this.sweepPollTimer = setInterval(async () => {
       try {
         const s = await this.api.sweepStatus();
-        const btn = this.qs<HTMLButtonElement>(".sweep-btn");
-        const status = this.qs<HTMLElement>(".sweep-status");
         if (s.status === "completed") {
           clearInterval(this.sweepPollTimer);
           btn.disabled = false;
@@ -910,11 +1512,17 @@ export class AudioInfoPlayer extends _Base {
           btn.disabled = false;
           status.className = "lib-status error";
           status.textContent = `Error: ${s.error ?? "unknown"}`;
+        } else if (s.status === "idle") {
+          clearInterval(this.sweepPollTimer);
+          btn.disabled = false;
+          status.className = "lib-status";
+          status.textContent = "";
         } else {
-          status.textContent = "Sweeping…";
+          const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+          status.textContent = `Sweeping… (${elapsed}s)`;
         }
-      } catch (_e) {
-        // transient network error — keep polling
+      } catch (e) {
+        console.warn("sweep poll:", e);
       }
     }, 1500) as unknown as number;
   }
@@ -940,6 +1548,69 @@ export class AudioInfoPlayer extends _Base {
         <p>You can close this tab.</p>
       </div>
     `;
+  }
+
+  // ---- folder inclusion helpers -------------------------------------------
+
+  private _getExcludedFolderPaths(): string[] {
+    const excluded: string[] = [];
+    for (const [path, enabled] of this.folderEnabled) {
+      if (enabled) continue;
+      // Skip a child path if its root is already excluded (root covers all sub-paths).
+      const slashIdx = path.indexOf("/");
+      if (slashIdx !== -1) {
+        const root = path.slice(0, slashIdx);
+        if (!this._isFolderEnabled(root)) continue;
+      }
+      excluded.push(path);
+    }
+    return excluded;
+  }
+
+  private _isFolderEnabled(path: string): boolean {
+    const v = this.folderEnabled.get(path);
+    return v === undefined ? true : v;
+  }
+
+  private async _loadFolderEnabledFromServer(): Promise<void> {
+    try {
+      const excluded = await this.api.getExcludedFolders();
+      this.folderEnabled.clear();
+      for (const path of excluded) {
+        this.folderEnabled.set(path, false);
+      }
+    } catch { /* server may not have saved exclusions yet — start with all enabled */ }
+  }
+
+  private _deslugify(s: string): string {
+    return s.replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  }
+
+  // ---- playlist actions ---------------------------------------------------
+
+  private async _saveQueueAsPlaylist(): Promise<void> {
+    if (this.queue.length === 0) return;
+    const name = prompt("Playlist name:");
+    if (!name || !name.trim()) return;
+    const saveBtn = this.qs<HTMLButtonElement>(".save-playlist-btn");
+    const title = this.qs<HTMLElement>(".queue-title");
+    saveBtn.disabled = true;
+    const prev = title.textContent ?? "";
+    title.textContent = "Saving…";
+    try {
+      await this.api.savePlaylist(name.trim(), this.queue.map((t) => t.ID));
+      title.textContent = `Saved as "${name.trim()}"`;
+      setTimeout(() => {
+        this._updateQueuePanel();
+        // Refresh playlists tab if it is currently open.
+        const activeTab = this.shadow.querySelector<HTMLButtonElement>(".tab.active");
+        if (activeTab?.dataset.tab === "playlists") this._loadTab("playlists");
+      }, 1500);
+    } catch (e) {
+      title.textContent = prev;
+      console.warn("save playlist:", String(e));
+      saveBtn.disabled = false;
+    }
   }
 
   // ---- private helpers ----------------------------------------------------

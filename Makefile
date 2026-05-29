@@ -66,7 +66,7 @@ $(MAN_PAGES_7): .FORCE
 	mkdir -p man/man7
 	pandoc $@.md --from markdown --to man -s >man/man7/$@
 
-$(PROGRAMS): $(PACKAGE)
+$(PROGRAMS): $(PACKAGE) htdocs/module/audiobox.js
 	@mkdir -p bin
 	go build -o "bin/$@$(EXT)" cmd/$@/*.go
 	@./bin/$@ -help >$@.1.md

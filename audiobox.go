@@ -261,8 +261,19 @@ func (c *Collection) ProcessAudioFile(filePath string, logger *log.Logger) error
 		info.ByArtist = []Agent{{Type: "Person", Name: artist}}
 	}
 
+	// Store path relative to AudioDir for portability across moves of the collection root.
+	absFilePath, err := filepath.Abs(filePath)
+	if err != nil {
+		return fmt.Errorf("absolute path for %s: %w", filePath, err)
+	}
+	relPath, err := filepath.Rel(c.cfg.AudioDir, absFilePath)
+	if err != nil {
+		return fmt.Errorf("relative path for %s: %w", filePath, err)
+	}
+	info.ContentURL = relPath
+
 	var existingID string
-	err = c.db.QueryRow("SELECT id FROM audio_files WHERE content_url = ?", filePath).Scan(&existingID)
+	err = c.db.QueryRow("SELECT id FROM audio_files WHERE content_url = ?", relPath).Scan(&existingID)
 	if err != nil && err != sql.ErrNoRows {
 		return fmt.Errorf("checking for existing record: %w", err)
 	}
@@ -966,7 +977,7 @@ func (c *Collection) Sweep() (int, error) {
 			rows.Close()
 			return 0, fmt.Errorf("sweep: scanning row: %w", err)
 		}
-		if _, err := os.Stat(r.path); os.IsNotExist(err) {
+		if _, err := os.Stat(filepath.Join(c.cfg.AudioDir, r.path)); os.IsNotExist(err) {
 			stale = append(stale, r)
 		}
 	}
@@ -1202,14 +1213,14 @@ func albumNameFromDir(audioDir, trackDir string) string {
  *     fmt.Println(a.DisplayName)
  *   }
  */
-func (c *Collection) GetAlbumEntries() ([]Album, error) {
+func (c *Collection) GetAlbumEntries(excludeFolders ...string) ([]Album, error) {
 	if !c.isOpen {
 		return nil, fmt.Errorf("collection is not open")
 	}
-	rows, err := c.db.Query(`
-		SELECT DISTINCT content_url
-		FROM audio_files
-		WHERE content_url != '' AND content_url IS NOT NULL`)
+	excl, exclArgs := folderExclusionSQL(excludeFolders)
+	rows, err := c.db.Query(
+		`SELECT DISTINCT content_url FROM audio_files WHERE content_url != '' AND content_url IS NOT NULL`+excl,
+		exclArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("querying album entries: %w", err)
 	}
@@ -1231,7 +1242,9 @@ func (c *Collection) GetAlbumEntries() ([]Album, error) {
 	raws := make([]raw, 0, len(dirSet))
 	nameCounts := make(map[string]int)
 	for dir := range dirSet {
-		name := albumNameFromDir(c.cfg.AudioDir, dir)
+		// dir is relative to AudioDir; helpers expect absolute paths.
+		absDir := filepath.Join(c.cfg.AudioDir, dir)
+		name := albumNameFromDir(c.cfg.AudioDir, absDir)
 		if name == "" {
 			continue // files directly in audioDir — no album grouping
 		}
@@ -1243,7 +1256,8 @@ func (c *Collection) GetAlbumEntries() ([]Album, error) {
 	for _, r := range raws {
 		displayName := r.name
 		if nameCounts[r.name] > 1 {
-			qualifier := deslugify(filepath.Base(filepath.Dir(albumDirPath(c.cfg.AudioDir, r.dir))))
+			absDir := filepath.Join(c.cfg.AudioDir, r.dir)
+			qualifier := deslugify(filepath.Base(filepath.Dir(albumDirPath(c.cfg.AudioDir, absDir))))
 			displayName = r.name + " [" + qualifier + "]"
 		}
 		albums = append(albums, Album{Name: r.name, DisplayName: displayName, Dir: r.dir})
@@ -1252,6 +1266,25 @@ func (c *Collection) GetAlbumEntries() ([]Album, error) {
 		return albums[i].DisplayName < albums[j].DisplayName
 	})
 	return albums, nil
+}
+
+// folderExclusionSQL builds " AND content_url NOT LIKE ? ..." clauses for each
+// excluded folder path. Returns empty string and nil args when excludeFolders is empty.
+func folderExclusionSQL(excludeFolders []string) (string, []interface{}) {
+	var clauses []string
+	var args []interface{}
+	for _, f := range excludeFolders {
+		f = strings.TrimRight(strings.ReplaceAll(f, `\`, "/"), "/")
+		if f == "" {
+			continue
+		}
+		clauses = append(clauses, `content_url NOT LIKE ? ESCAPE '\'`)
+		args = append(args, escapeLIKE(f)+"/%")
+	}
+	if len(clauses) == 0 {
+		return "", nil
+	}
+	return " AND " + strings.Join(clauses, " AND "), args
 }
 
 // escapeLIKE escapes the SQLite LIKE special characters (\, %, _) in s
@@ -1339,6 +1372,110 @@ func (c *Collection) GetAlbums() ([]string, error) {
 	return names, nil
 }
 
+/** GetFolders returns a sorted list of directories that contain audio files.
+ * Each directory is represented relative to the collection's AudioDir.
+ * Directories that contain only files directly in AudioDir (Dir == ".") are excluded.
+ *
+ * Returns:
+ *   []FolderEntry — sorted by Path
+ *   error         — non-nil on database failure
+ *
+ * Example:
+ *   folders, err := col.GetFolders()
+ *   for _, f := range folders { fmt.Printf("%s (%d tracks)\n", f.Name, f.TrackCount) }
+ */
+func (c *Collection) GetFolders() ([]FolderEntry, error) {
+	if !c.isOpen {
+		return nil, fmt.Errorf("collection is not open")
+	}
+	rows, err := c.db.Query(`
+		SELECT content_url
+		FROM audio_files
+		WHERE content_url IS NOT NULL AND content_url != ''`)
+	if err != nil {
+		return nil, fmt.Errorf("querying folders: %w", err)
+	}
+	defer rows.Close()
+
+	dirCounts := make(map[string]int)
+	for rows.Next() {
+		var url string
+		if err := rows.Scan(&url); err != nil {
+			return nil, fmt.Errorf("scanning content_url: %w", err)
+		}
+		dir := filepath.Dir(url)
+		if dir == "." {
+			continue // track sits directly in AudioDir — no folder grouping
+		}
+		dirCounts[dir]++
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating content_urls: %w", err)
+	}
+
+	folders := make([]FolderEntry, 0, len(dirCounts))
+	for dir, count := range dirCounts {
+		folders = append(folders, FolderEntry{
+			Path:       dir,
+			Name:       deslugify(filepath.Base(dir)),
+			TrackCount: count,
+		})
+	}
+	sort.Slice(folders, func(i, j int) bool { return folders[i].Path < folders[j].Path })
+	return folders, nil
+}
+
+/** GetFolderTracks returns all audio files whose content_url begins with dir.
+ * The dir parameter must be a relative path as returned by GetFolders.
+ * Results are ordered by disc_number, track_number, then name.
+ *
+ * Parameters:
+ *   dir (string) — relative directory path, e.g. "Jazz/Miles-Davis/Kind-Of-Blue"
+ *
+ * Returns:
+ *   []AudioInfo — tracks in playback order
+ *   error       — non-nil on database failure
+ *
+ * Example:
+ *   tracks, err := col.GetFolderTracks("Jazz/Miles-Davis/Kind-Of-Blue")
+ */
+func (c *Collection) GetFolderTracks(dir string) ([]AudioInfo, error) {
+	if !c.isOpen {
+		return nil, fmt.Errorf("collection is not open")
+	}
+	dir = filepath.Clean(dir)
+	pattern := escapeLIKE(dir) + string(filepath.Separator) + "%"
+	rows, err := c.db.Query(`
+		SELECT id, schema_type, name, description, content_url, encoding_format,
+		       duration, date_published, in_language, genre, identifiers, by_artist,
+		       in_album, disc_number, track_number, isrc_code, recording_of, checksum, checksum_algorithm,
+		       created, updated
+		FROM audio_files
+		WHERE content_url LIKE ? ESCAPE '\'
+		ORDER BY disc_number, track_number, name`,
+		pattern)
+	if err != nil {
+		return nil, fmt.Errorf("querying folder tracks for %q: %w", dir, err)
+	}
+	defer rows.Close()
+
+	var results []AudioInfo
+	for rows.Next() {
+		info, err := scanAudioInfo(rows)
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, info)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating folder tracks for %q: %w", dir, err)
+	}
+	if results == nil {
+		results = []AudioInfo{}
+	}
+	return results, nil
+}
+
 /** GetArtists returns a sorted, deduplicated list of artist names in the collection.
  * Artist names are extracted from the by_artist JSON column.
  *
@@ -1349,11 +1486,14 @@ func (c *Collection) GetAlbums() ([]string, error) {
  * Example:
  *   artists, err := col.GetArtists()
  */
-func (c *Collection) GetArtists() ([]string, error) {
+func (c *Collection) GetArtists(excludeFolders ...string) ([]string, error) {
 	if !c.isOpen {
 		return nil, fmt.Errorf("collection is not open")
 	}
-	rows, err := c.db.Query(`SELECT DISTINCT by_artist FROM audio_files WHERE by_artist IS NOT NULL AND by_artist != 'null'`)
+	excl, exclArgs := folderExclusionSQL(excludeFolders)
+	rows, err := c.db.Query(
+		`SELECT DISTINCT by_artist FROM audio_files WHERE by_artist IS NOT NULL AND by_artist != 'null'`+excl,
+		exclArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("querying artists: %w", err)
 	}
@@ -1396,18 +1536,19 @@ func (c *Collection) GetArtists() ([]string, error) {
  * Example:
  *   titles, err := col.GetTitles()
  */
-func (c *Collection) GetTitles() ([]string, error) {
-	return c.queryDistinctColumn("name")
+func (c *Collection) GetTitles(excludeFolders ...string) ([]string, error) {
+	return c.queryDistinctColumn("name", excludeFolders...)
 }
 
 // queryDistinctColumn returns sorted distinct non-empty values from a text column.
-func (c *Collection) queryDistinctColumn(col string) ([]string, error) {
+func (c *Collection) queryDistinctColumn(col string, excludeFolders ...string) ([]string, error) {
 	if !c.isOpen {
 		return nil, fmt.Errorf("collection is not open")
 	}
+	excl, exclArgs := folderExclusionSQL(excludeFolders)
 	rows, err := c.db.Query(
-		fmt.Sprintf("SELECT DISTINCT %s FROM audio_files WHERE %s != '' AND %s IS NOT NULL ORDER BY %s", col, col, col, col),
-	)
+		fmt.Sprintf("SELECT DISTINCT %s FROM audio_files WHERE %s != '' AND %s IS NOT NULL%s ORDER BY %s", col, col, col, excl, col),
+		exclArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("querying %s: %w", col, err)
 	}
@@ -1615,4 +1756,180 @@ func (a AudioInfo) ToJSONLD() ([]byte, error) {
 	}
 
 	return json.MarshalIndent(doc, "", "  ")
+}
+
+/** SavePlaylist stores the current queue as a named playlist and returns the new UUID.
+ * Any existing playlist with the same name is not affected — duplicate names are allowed.
+ *
+ * Parameters:
+ *   name     (string)   — display name for the playlist
+ *   trackIDs ([]string) — ordered list of audio_files UUIDs
+ *
+ * Returns:
+ *   string — UUID of the newly created playlist
+ *   error  — non-nil on any database failure
+ *
+ * Example:
+ *   id, err := col.SavePlaylist("Evening Drive", []string{uuid1, uuid2})
+ */
+func (c *Collection) SavePlaylist(name string, trackIDs []string) (string, error) {
+	if !c.isOpen {
+		return "", fmt.Errorf("collection is not open")
+	}
+	id := uuid.New().String()
+	tx, err := c.db.Begin()
+	if err != nil {
+		return "", fmt.Errorf("save playlist: begin: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+	if _, err := tx.Exec(`INSERT INTO playlists (id, name) VALUES (?, ?)`, id, name); err != nil {
+		return "", fmt.Errorf("save playlist: insert: %w", err)
+	}
+	for i, tid := range trackIDs {
+		if _, err := tx.Exec(`INSERT INTO playlist_tracks (playlist_id, position, audio_id) VALUES (?, ?, ?)`, id, i+1, tid); err != nil {
+			return "", fmt.Errorf("save playlist: track %d: %w", i+1, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return "", fmt.Errorf("save playlist: commit: %w", err)
+	}
+	return id, nil
+}
+
+/** GetPlaylists returns all playlists ordered by creation time descending.
+ *
+ * Returns:
+ *   []PlaylistInfo — playlist summaries; empty slice when none exist
+ *   error          — non-nil on any database failure
+ *
+ * Example:
+ *   lists, err := col.GetPlaylists()
+ */
+func (c *Collection) GetPlaylists() ([]PlaylistInfo, error) {
+	if !c.isOpen {
+		return nil, fmt.Errorf("collection is not open")
+	}
+	rows, err := c.db.Query(`
+		SELECT p.id, p.name, p.created, COUNT(pt.audio_id) AS track_count
+		FROM playlists p
+		LEFT JOIN playlist_tracks pt ON pt.playlist_id = p.id
+		GROUP BY p.id
+		ORDER BY p.created DESC`)
+	if err != nil {
+		return nil, fmt.Errorf("get playlists: %w", err)
+	}
+	defer rows.Close()
+	var out []PlaylistInfo
+	for rows.Next() {
+		var pl PlaylistInfo
+		if err := rows.Scan(&pl.ID, &pl.Name, &pl.Created, &pl.TrackCount); err != nil {
+			return nil, fmt.Errorf("get playlists: scan: %w", err)
+		}
+		out = append(out, pl)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("get playlists: iter: %w", err)
+	}
+	if out == nil {
+		out = []PlaylistInfo{}
+	}
+	return out, nil
+}
+
+/** LoadPlaylist returns the ordered tracks for the playlist with the given UUID.
+ * Returns an error wrapping sql.ErrNoRows when the playlist does not exist.
+ *
+ * Parameters:
+ *   id (string) — UUID of the playlist
+ *
+ * Returns:
+ *   []AudioInfo — tracks in playlist order
+ *   error       — non-nil on any database failure, or when the playlist is not found
+ *
+ * Example:
+ *   tracks, err := col.LoadPlaylist("550e8400-e29b-41d4-a716-446655440000")
+ */
+func (c *Collection) LoadPlaylist(id string) ([]AudioInfo, error) {
+	if !c.isOpen {
+		return nil, fmt.Errorf("collection is not open")
+	}
+	// Verify the playlist exists.
+	var exists int
+	if err := c.db.QueryRow(`SELECT COUNT(*) FROM playlists WHERE id = ?`, id).Scan(&exists); err != nil {
+		return nil, fmt.Errorf("load playlist: %w", err)
+	}
+	if exists == 0 {
+		return nil, fmt.Errorf("load playlist %s: %w", id, sql.ErrNoRows)
+	}
+	rows, err := c.db.Query(`
+		SELECT af.id, af.schema_type, af.name, af.description, af.content_url,
+		       af.encoding_format, af.duration, af.date_published, af.in_language,
+		       af.genre, af.identifiers, af.by_artist, af.in_album,
+		       af.disc_number, af.track_number,
+		       af.isrc_code, af.recording_of, af.checksum, af.checksum_algorithm,
+		       af.created, af.updated
+		FROM playlist_tracks pt
+		JOIN audio_files af ON af.id = pt.audio_id
+		WHERE pt.playlist_id = ?
+		ORDER BY pt.position`, id)
+	if err != nil {
+		return nil, fmt.Errorf("load playlist: query: %w", err)
+	}
+	defer rows.Close()
+	var out []AudioInfo
+	for rows.Next() {
+		var info AudioInfo
+		var identJSON, artistJSON []byte
+		if err := rows.Scan(
+			&info.ID, &info.SchemaType, &info.Name, &info.Description, &info.ContentURL,
+			&info.EncodingFormat, &info.Duration, &info.DatePublished, &info.InLanguage,
+			&info.Genre, &identJSON, &artistJSON, &info.InAlbum,
+			&info.DiscNumber, &info.TrackNumber,
+			&info.IsrcCode, &info.RecordingOf, &info.Checksum, &info.ChecksumAlgorithm,
+			&info.Created, &info.Updated,
+		); err != nil {
+			return nil, fmt.Errorf("load playlist: scan: %w", err)
+		}
+		if len(identJSON) > 0 {
+			_ = json.Unmarshal(identJSON, &info.Identifiers)
+		}
+		if len(artistJSON) > 0 {
+			_ = json.Unmarshal(artistJSON, &info.ByArtist)
+		}
+		out = append(out, info)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("load playlist: iter: %w", err)
+	}
+	if out == nil {
+		out = []AudioInfo{}
+	}
+	return out, nil
+}
+
+/** DeletePlaylist removes the playlist and all its track associations.
+ * Returns an error wrapping sql.ErrNoRows when the playlist does not exist.
+ *
+ * Parameters:
+ *   id (string) — UUID of the playlist to delete
+ *
+ * Returns:
+ *   error — non-nil on any database failure or when the playlist is not found
+ *
+ * Example:
+ *   err := col.DeletePlaylist("550e8400-e29b-41d4-a716-446655440000")
+ */
+func (c *Collection) DeletePlaylist(id string) error {
+	if !c.isOpen {
+		return fmt.Errorf("collection is not open")
+	}
+	res, err := c.db.Exec(`DELETE FROM playlists WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("delete playlist: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("delete playlist %s: %w", id, sql.ErrNoRows)
+	}
+	return nil
 }

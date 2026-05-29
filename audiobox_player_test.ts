@@ -1,4 +1,4 @@
-import { assertEquals, assertMatch } from "@std/assert";
+import { assertEquals } from "@std/assert";
 import { DOMParser } from "deno-dom";
 
 // Pure utility functions — no DOM required
@@ -6,8 +6,33 @@ import {
   buildBrowseQuery,
   formatArtists,
   formatDuration,
+  parseDurationSecs,
   PLAYER_TEMPLATE,
 } from "./audiobox_player.ts";
+
+// ---------------------------------------------------------------------------
+// parseDurationSecs
+// ---------------------------------------------------------------------------
+
+Deno.test("parseDurationSecs - empty string returns 0", () => {
+  assertEquals(parseDurationSecs(""), 0);
+});
+
+Deno.test("parseDurationSecs - invalid string returns 0", () => {
+  assertEquals(parseDurationSecs("abc"), 0);
+});
+
+Deno.test("parseDurationSecs - PT45S returns 45", () => {
+  assertEquals(parseDurationSecs("PT45S"), 45);
+});
+
+Deno.test("parseDurationSecs - PT3M45S returns 225", () => {
+  assertEquals(parseDurationSecs("PT3M45S"), 225);
+});
+
+Deno.test("parseDurationSecs - PT1H2M3S returns 3723", () => {
+  assertEquals(parseDurationSecs("PT1H2M3S"), 3723);
+});
 
 // ---------------------------------------------------------------------------
 // formatArtists
@@ -99,16 +124,16 @@ Deno.test("buildBrowseQuery - escapes double quotes in item", () => {
 // PLAYER_TEMPLATE structure (via deno-dom)
 // ---------------------------------------------------------------------------
 
-Deno.test("PLAYER_TEMPLATE - has three tab buttons", () => {
+Deno.test("PLAYER_TEMPLATE - has five tab buttons", () => {
   const doc = new DOMParser().parseFromString(
     `<html><body>${PLAYER_TEMPLATE}</body></html>`,
     "text/html",
   )!;
   const tabs = doc.querySelectorAll(".tab");
-  assertEquals(tabs.length, 3);
+  assertEquals(tabs.length, 5);
 });
 
-Deno.test("PLAYER_TEMPLATE - tab labels are Albums, Artists, Titles", () => {
+Deno.test("PLAYER_TEMPLATE - tab labels are Albums, Artists, Titles, Folders, Playlists", () => {
   const doc = new DOMParser().parseFromString(
     `<html><body>${PLAYER_TEMPLATE}</body></html>`,
     "text/html",
@@ -116,7 +141,7 @@ Deno.test("PLAYER_TEMPLATE - tab labels are Albums, Artists, Titles", () => {
   const labels = Array.from(doc.querySelectorAll(".tab")).map((el) =>
     el.textContent?.trim()
   );
-  assertEquals(labels, ["Albums", "Artists", "Titles"]);
+  assertEquals(labels, ["Albums", "Artists", "Titles", "Folders", "Playlists"]);
 });
 
 Deno.test("PLAYER_TEMPLATE - has search input and button", () => {
@@ -130,13 +155,14 @@ Deno.test("PLAYER_TEMPLATE - has search input and button", () => {
   assertEquals(btn !== null, true);
 });
 
-Deno.test("PLAYER_TEMPLATE - now-playing panel starts hidden", () => {
+Deno.test("PLAYER_TEMPLATE - now-playing panel is always visible", () => {
   const doc = new DOMParser().parseFromString(
     `<html><body>${PLAYER_TEMPLATE}</body></html>`,
     "text/html",
   )!;
   const np = doc.querySelector(".now-playing");
-  assertMatch(np?.className ?? "", /hidden/);
+  assertEquals(np !== null, true);
+  assertEquals(np?.classList.contains("hidden"), false);
 });
 
 Deno.test("PLAYER_TEMPLATE - has prev, play, next control buttons", () => {

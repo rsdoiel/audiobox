@@ -49,6 +49,17 @@ export interface AlbumEntry {
   dir: string;
 }
 
+/** FolderEntry represents a directory containing audio files, as returned by GET /api/list/folders.
+ * path is relative to the collection's AudioDir.
+ * name is the deslugified last path component.
+ * trackCount is the number of tracks under the folder.
+ */
+export interface FolderEntry {
+  path: string;
+  name: string;
+  trackCount: number;
+}
+
 /** CollectionStatus describes the current state of the audiobox collection. */
 export interface CollectionStatus {
   initialized: boolean;
@@ -69,6 +80,21 @@ export interface ScanStatus {
 /** SweepStatus extends ScanStatus with a records_removed count. */
 export interface SweepStatus extends ScanStatus {
   records_removed?: number;
+}
+
+/** ShareStatus describes the current network-sharing state of the server. */
+export interface ShareStatus {
+  sharing: boolean;
+  share_address: string;
+  share_url: string;
+}
+
+/** PlaylistInfo describes a saved playlist as returned by GET /api/playlists. */
+export interface PlaylistInfo {
+  id: string;
+  name: string;
+  trackCount: number;
+  created: string;
 }
 
 /** ScanStarted is returned when POST /api/scan or POST /api/sweep accepts the request. */
@@ -151,8 +177,11 @@ export class AudioInfoAPI {
    *   const albums = await api.listAlbums();
    *   albums.forEach(a => console.log(a.displayName));
    */
-  async listAlbums(): Promise<AlbumEntry[]> {
-    return this.getJSON<AlbumEntry[]>("/api/list/albums");
+  async listAlbums(excludeFolders: string[] = []): Promise<AlbumEntry[]> {
+    const q = excludeFolders.length > 0
+      ? `?exclude=${excludeFolders.map(encodeURIComponent).join(",")}`
+      : "";
+    return this.getJSON<AlbumEntry[]>(`/api/list/albums${q}`);
   }
 
   /** listArtists returns all distinct artist names in the collection.
@@ -163,8 +192,11 @@ export class AudioInfoAPI {
    * Example:
    *   const artists = await api.listArtists();
    */
-  async listArtists(): Promise<string[]> {
-    return this.getJSON<string[]>("/api/list/artists");
+  async listArtists(excludeFolders: string[] = []): Promise<string[]> {
+    const q = excludeFolders.length > 0
+      ? `?exclude=${excludeFolders.map(encodeURIComponent).join(",")}`
+      : "";
+    return this.getJSON<string[]>(`/api/list/artists${q}`);
   }
 
   /** listTitles returns all distinct recording titles in the collection.
@@ -175,8 +207,40 @@ export class AudioInfoAPI {
    * Example:
    *   const titles = await api.listTitles();
    */
-  async listTitles(): Promise<string[]> {
-    return this.getJSON<string[]>("/api/list/titles");
+  async listTitles(excludeFolders: string[] = []): Promise<string[]> {
+    const q = excludeFolders.length > 0
+      ? `?exclude=${excludeFolders.map(encodeURIComponent).join(",")}`
+      : "";
+    return this.getJSON<string[]>(`/api/list/titles${q}`);
+  }
+
+  /** listFolders returns all directories that contain audio files, sorted by path.
+   * Each entry includes the path (relative to AudioDir), a deslugified name, and a track count.
+   *
+   * Returns:
+   *   Promise<FolderEntry[]> — sorted folder entries
+   *
+   * Example:
+   *   const folders = await api.listFolders();
+   *   folders.forEach(f => console.log(f.name, f.trackCount));
+   */
+  async listFolders(): Promise<FolderEntry[]> {
+    return this.getJSON<FolderEntry[]>("/api/list/folders");
+  }
+
+  /** listFolderTracks returns all audio files under the given folder path.
+   *
+   * Parameters:
+   *   dir (string) — relative folder path as returned by listFolders(), e.g. "Jazz/Miles-Davis"
+   *
+   * Returns:
+   *   Promise<AudioInfo[]> — tracks in disc/track/name order
+   *
+   * Example:
+   *   const tracks = await api.listFolderTracks("Jazz/Miles-Davis/Kind-Of-Blue");
+   */
+  async listFolderTracks(dir: string): Promise<AudioInfo[]> {
+    return this.getJSON<AudioInfo[]>(`/api/list/folder-tracks?dir=${encodeURIComponent(dir)}`);
   }
 
   /** search queries the collection by title, album, or artist.
@@ -297,6 +361,192 @@ export class AudioInfoAPI {
    */
   async sweepStatus(): Promise<SweepStatus> {
     return this.getJSON<SweepStatus>("/api/sweep/status");
+  }
+
+  /** shareStatus returns the current network-sharing state of the server.
+   *
+   * Returns:
+   *   Promise<ShareStatus> — {sharing, share_address, share_url}
+   *
+   * Example:
+   *   const s = await api.shareStatus();
+   *   if (s.sharing) console.log("Sharing at", s.share_url);
+   */
+  async shareStatus(): Promise<ShareStatus> {
+    return this.getJSON<ShareStatus>("/api/share/status");
+  }
+
+  /** shareAddresses returns the available non-loopback IPv4 addresses on the host.
+   *
+   * Returns:
+   *   Promise<string[]> — list of IPv4 address strings
+   *
+   * Example:
+   *   const addrs = await api.shareAddresses();
+   */
+  async shareAddresses(): Promise<string[]> {
+    return this.getJSON<string[]>("/api/share/addresses");
+  }
+
+  /** shareOn enables LAN sharing on the given IPv4 address and restarts the listener.
+   * The server responds immediately; poll shareStatus() until sharing === true.
+   *
+   * Parameters:
+   *   address (string) — IPv4 address to bind the LAN listener to
+   *
+   * Returns:
+   *   Promise<{status, poll_url}> — "restarting" acknowledgement
+   *
+   * Example:
+   *   const r = await api.shareOn("192.168.1.5");
+   */
+  async shareOn(address: string): Promise<{ status: string; poll_url: string }> {
+    const resp = await fetch(this.baseUrl + "/api/share/on", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ address }),
+    });
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => ({ error: resp.statusText })) as {
+        error?: string;
+      };
+      throw new Error(body.error ?? resp.statusText);
+    }
+    return resp.json() as Promise<{ status: string; poll_url: string }>;
+  }
+
+  /** shareOff disables LAN sharing and restarts the listener on loopback only.
+   * The server responds immediately; poll shareStatus() until sharing === false.
+   *
+   * Returns:
+   *   Promise<{status, poll_url}> — "restarting" acknowledgement
+   *
+   * Example:
+   *   const r = await api.shareOff();
+   */
+  async shareOff(): Promise<{ status: string; poll_url: string }> {
+    return this.postJSON<{ status: string; poll_url: string }>("/api/share/off");
+  }
+
+  /** getExcludedFolders returns the list of folder paths currently excluded from browse views.
+   *
+   * Returns:
+   *   Promise<string[]> — excluded folder paths (relative to AudioDir); empty when none are excluded
+   *
+   * Example:
+   *   const excluded = await api.getExcludedFolders();
+   */
+  async getExcludedFolders(): Promise<string[]> {
+    return this.getJSON<string[]>("/api/excluded-folders");
+  }
+
+  /** setExcludedFolders saves the list of excluded folder paths to the server config.
+   * Pass an empty array to clear all exclusions.
+   *
+   * Parameters:
+   *   excluded (string[]) — folder paths to exclude from browse views
+   *
+   * Returns:
+   *   Promise<string[]> — the saved list as confirmed by the server
+   *
+   * Example:
+   *   await api.setExcludedFolders(["Music/Seasonal"]);
+   */
+  async setExcludedFolders(excluded: string[]): Promise<string[]> {
+    const resp = await fetch(this.baseUrl + "/api/excluded-folders", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ excluded }),
+    });
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => ({ error: resp.statusText })) as {
+        error?: string;
+      };
+      throw new Error(body.error ?? resp.statusText);
+    }
+    return resp.json() as Promise<string[]>;
+  }
+
+  /** listPlaylists returns all saved playlists ordered by creation time descending.
+   *
+   * Returns:
+   *   Promise<PlaylistInfo[]> — playlist summaries
+   *
+   * Example:
+   *   const lists = await api.listPlaylists();
+   */
+  async listPlaylists(): Promise<PlaylistInfo[]> {
+    return this.getJSON<PlaylistInfo[]>("/api/playlists");
+  }
+
+  /** savePlaylist saves the given track IDs as a named playlist.
+   *
+   * Parameters:
+   *   name     (string)   — display name for the playlist
+   *   trackIds (string[]) — ordered list of AudioInfo UUIDs
+   *
+   * Returns:
+   *   Promise<{status, id}> — confirmation with the new playlist UUID
+   *
+   * Example:
+   *   const r = await api.savePlaylist("Morning Mix", queue.map(t => t.ID));
+   */
+  async savePlaylist(
+    name: string,
+    trackIds: string[],
+  ): Promise<{ status: string; id: string }> {
+    const resp = await fetch(this.baseUrl + "/api/playlists", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, trackIds }),
+    });
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => ({ error: resp.statusText })) as {
+        error?: string;
+      };
+      throw new Error(body.error ?? resp.statusText);
+    }
+    return resp.json() as Promise<{ status: string; id: string }>;
+  }
+
+  /** loadPlaylist returns the ordered tracks for a saved playlist.
+   *
+   * Parameters:
+   *   id (string) — UUID of the playlist
+   *
+   * Returns:
+   *   Promise<AudioInfo[]> — tracks in playlist order; throws on 404
+   *
+   * Example:
+   *   const tracks = await api.loadPlaylist("550e8400-e29b-41d4-a716-446655440000");
+   */
+  async loadPlaylist(id: string): Promise<AudioInfo[]> {
+    return this.getJSON<AudioInfo[]>(`/api/playlists/${encodeURIComponent(id)}`);
+  }
+
+  /** deletePlaylist removes a playlist from the collection.
+   *
+   * Parameters:
+   *   id (string) — UUID of the playlist to delete
+   *
+   * Returns:
+   *   Promise<{status, id}> — confirmation; throws on 404
+   *
+   * Example:
+   *   await api.deletePlaylist("550e8400-e29b-41d4-a716-446655440000");
+   */
+  async deletePlaylist(id: string): Promise<{ status: string; id: string }> {
+    const resp = await fetch(
+      this.baseUrl + `/api/playlists/${encodeURIComponent(id)}`,
+      { method: "DELETE" },
+    );
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => ({ error: resp.statusText })) as {
+        error?: string;
+      };
+      throw new Error(body.error ?? resp.statusText);
+    }
+    return resp.json() as Promise<{ status: string; id: string }>;
   }
 
   /** audioUrl returns the streaming URL for the audio file with the given UUID.

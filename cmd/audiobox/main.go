@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"os/exec"
 	"runtime"
@@ -268,16 +269,17 @@ EXAMPLES
 `
 
 const helpServer = `
-{app_name} server — start a localhost web server for the collection
+{app_name} server — start a web server for the collection
 
 SYNOPSIS
 
   {app_name} [server]
+  {app_name} server share [IP_ADDRESS]
 
 DESCRIPTION
 
-  Starts an HTTP server bound to 127.0.0.1 (default port 8010) and opens
-  the collection in the operating system's default web browser.
+  Without arguments, starts an HTTP server bound to 127.0.0.1 (default port
+  8010) and opens the collection in the operating system's default web browser.
 
   "server" is the default action: running {app_name} with no arguments is
   equivalent to "{app_name} server".
@@ -289,31 +291,26 @@ DESCRIPTION
     corsOrigin (string)  Access-Control-Allow-Origin value
                          (default: "*"; set to "off" to disable)
 
-  The web UI provides controls to scan, sweep, and shut down the server.
-  To stop the server from the command line press Ctrl-C.
+SHARING (LAN access)
 
-ENDPOINTS
+  {app_name} server share IP_ADDRESS
+    Saves IP_ADDRESS to ~/Audio/audio.yaml and starts the server bound to
+    0.0.0.0:PORT, making it reachable from other devices on the same network.
+    LAN clients get read-only access (browse + stream); write operations
+    (scan, sweep, share toggle) are restricted to 127.0.0.1.
 
-  GET  /api/status          collection status (initialized, track_count)
-  POST /api/init            initialise or upgrade the collection
-  GET  /api/list/albums     list distinct album names
-  GET  /api/list/artists    list distinct artist names
-  GET  /api/list/titles     list distinct recording titles
-  GET  /api/search?q=QUERY  search the collection
-  GET  /api/show/{id}       full metadata for one record
-  DELETE /api/show/{id}     remove a record from the collection
-  POST /api/scan            start async re-scan of audioDir
-  GET  /api/scan/status     poll async scan progress
-  POST /api/sweep           start async sweep of stale records
-  GET  /api/sweep/status    poll async sweep progress
-  GET  /api/audio/{id}      stream audio file (supports Range requests)
-  POST /api/shutdown        gracefully stop the server
-  GET  /api/help            API reference as Markdown
+  {app_name} server share
+    Uses the shareAddress saved in ~/Audio/audio.yaml. Exits with an error
+    if no address has been configured yet.
+
+  The web UI Share button provides an equivalent in-browser flow.
 
 EXAMPLES
 
   {app_name}
   {app_name} server
+  {app_name} server share 192.168.1.5
+  {app_name} server share
 `
 
 const helpPlayer = `
@@ -420,7 +417,11 @@ func main() {
 			log.Fatalf("error opening collection: %v", err)
 		}
 		defer col.Close()
-		handleServer(col)
+		if len(args) > 0 && strings.ToLower(args[0]) == "share" {
+			handleServerShare(col, args[1:])
+		} else {
+			handleServer(col)
+		}
 	case "scan", "sweep", "list", "search", "show", "delete", "player":
 		col, err := audiobox.LoadAudiobox()
 		if err != nil {
@@ -637,6 +638,44 @@ func handleServer(col *audiobox.Collection) {
 	if port == 0 {
 		port = 8010
 	}
+	url := fmt.Sprintf("http://127.0.0.1:%d", port)
+	go func() {
+		time.Sleep(500 * time.Millisecond)
+		if err := openBrowser(url); err != nil {
+			logger.Printf("could not open browser: %v", err)
+		}
+	}()
+	if err := col.Serve(logger); err != nil {
+		log.Fatalf("server error: %v", err)
+	}
+}
+
+func handleServerShare(col *audiobox.Collection, args []string) {
+	logger := log.New(os.Stderr, "", log.LstdFlags)
+	cfg := col.Config()
+	port := cfg.Port
+	if port == 0 {
+		port = 8010
+	}
+
+	var shareAddr string
+	if len(args) > 0 {
+		shareAddr = args[0]
+		ip := net.ParseIP(shareAddr)
+		if ip == nil || ip.To4() == nil {
+			log.Fatalf("invalid IPv4 address: %q", shareAddr)
+		}
+		if err := col.SetShareAddress(shareAddr); err != nil {
+			log.Fatalf("error saving share address: %v", err)
+		}
+	} else {
+		shareAddr = cfg.ShareAddress
+		if shareAddr == "" {
+			log.Fatalf("no share address configured; run: %s server share IP_ADDRESS", os.Args[0])
+		}
+	}
+
+	logger.Printf("sharing on http://%s:%d (full access at http://127.0.0.1:%d)", shareAddr, port, port)
 	url := fmt.Sprintf("http://127.0.0.1:%d", port)
 	go func() {
 		time.Sleep(500 * time.Millisecond)

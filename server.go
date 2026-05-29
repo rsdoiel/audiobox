@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -26,6 +27,64 @@ type asyncState struct {
 	completedAt time.Time
 	count       int // records affected (sweep only)
 	err         error
+}
+
+// shareState holds the current network-sharing status, protected by a RWMutex.
+type shareState struct {
+	mu        sync.RWMutex
+	sharing   bool
+	shareAddr string // e.g. "192.168.1.5"
+}
+
+// listenRequest asks the listenerManager to swap to a new bind address.
+type listenRequest struct {
+	addr      string       // TCP address, e.g. "127.0.0.1:8010" or "0.0.0.0:8010"
+	sharing   bool         // new sharing value to record in shareState
+	shareAddr string       // human-readable LAN address stored in shareState
+	done      chan struct{} // closed by manager after state is updated
+}
+
+// listenerManager owns a single http.Server goroutine and can hot-swap its
+// bind address by receiving listenRequests over ctrl.
+type listenerManager struct {
+	port    int
+	handler http.Handler
+	ctrl    chan listenRequest
+	state   *shareState
+	logger  *log.Logger
+}
+
+// run starts the initial listener and blocks until shutdownCh is closed.
+// On each listenRequest the current server is cleanly shut down and a new
+// one is started on the requested address before state is updated.
+func (lm *listenerManager) run(initialAddr string, shutdownCh <-chan struct{}) error {
+	srv := &http.Server{Addr: initialAddr, Handler: lm.handler}
+	lm.logger.Printf("audiobox server listening on http://%s", initialAddr)
+	go srv.ListenAndServe() //nolint:errcheck
+
+	for {
+		select {
+		case req := <-lm.ctrl:
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			if err := srv.Shutdown(ctx); err != nil {
+				lm.logger.Printf("listener swap shutdown: %v", err)
+			}
+			cancel()
+			srv = &http.Server{Addr: req.addr, Handler: lm.handler}
+			lm.logger.Printf("audiobox server listening on http://%s", req.addr)
+			go srv.ListenAndServe() //nolint:errcheck
+			lm.state.mu.Lock()
+			lm.state.sharing = req.sharing
+			lm.state.shareAddr = req.shareAddr
+			lm.state.mu.Unlock()
+			close(req.done)
+		case <-shutdownCh:
+			lm.logger.Printf("audiobox server shutting down")
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			return srv.Shutdown(ctx)
+		}
+	}
 }
 
 /** Serve starts a localhost HTTP server for the collection.
@@ -56,6 +115,19 @@ func (c *Collection) Serve(logger *log.Logger) error {
 	sweepSt := &asyncState{}
 	shutdownCh := make(chan struct{})
 
+	ss := &shareState{}
+	if c.cfg.ShareAddress != "" {
+		ss.sharing = true
+		ss.shareAddr = c.cfg.ShareAddress
+	}
+
+	lm := &listenerManager{
+		port:   port,
+		ctrl:   make(chan listenRequest, 1),
+		state:  ss,
+		logger: logger,
+	}
+
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /api/status", c.handleStatus(logger))
@@ -63,6 +135,8 @@ func (c *Collection) Serve(logger *log.Logger) error {
 	mux.HandleFunc("GET /api/list/albums", c.handleListAlbums(logger))
 	mux.HandleFunc("GET /api/list/artists", c.handleListArtists(logger))
 	mux.HandleFunc("GET /api/list/titles", c.handleListTitles(logger))
+	mux.HandleFunc("GET /api/list/folders", c.handleListFolders(logger))
+	mux.HandleFunc("GET /api/list/folder-tracks", c.handleListFolderTracks(logger))
 	mux.HandleFunc("GET /api/search", c.handleSearch(logger))
 	mux.HandleFunc("GET /api/show/{id}", c.handleShow(logger))
 	mux.HandleFunc("DELETE /api/show/{id}", c.handleDelete(logger))
@@ -73,11 +147,20 @@ func (c *Collection) Serve(logger *log.Logger) error {
 	mux.HandleFunc("GET /api/audio/{id}", c.handleAudio(logger))
 	mux.HandleFunc("GET /api/help", handleAPIHelp())
 	mux.HandleFunc("POST /api/shutdown", handleShutdown(shutdownCh, logger))
+	mux.HandleFunc("GET /api/share/status", handleShareStatus(ss, port))
+	mux.HandleFunc("GET /api/share/addresses", handleShareAddresses())
+	mux.HandleFunc("POST /api/share/on", c.handleShareOn(lm, logger))
+	mux.HandleFunc("POST /api/share/off", c.handleShareOff(lm, logger))
+	mux.HandleFunc("GET /api/excluded-folders", c.handleGetExcludedFolders())
+	mux.HandleFunc("POST /api/excluded-folders", c.handleSetExcludedFolders(logger))
+	mux.HandleFunc("GET /api/playlists", c.handleListPlaylists(logger))
+	mux.HandleFunc("POST /api/playlists", c.handleSavePlaylist(logger))
+	mux.HandleFunc("GET /api/playlists/{id}", c.handleLoadPlaylist(logger))
+	mux.HandleFunc("DELETE /api/playlists/{id}", c.handleDeletePlaylist(logger))
 
 	if c.cfg.Htdocs != "" {
 		mux.Handle("/", http.FileServer(http.Dir(c.cfg.Htdocs)))
 	} else {
-		// Serve the embedded htdocs as the default web UI.
 		sub, err := fs.Sub(embeddedHtdocs, "htdocs")
 		if err != nil {
 			return fmt.Errorf("embedded htdocs: %w", err)
@@ -85,31 +168,13 @@ func (c *Collection) Serve(logger *log.Logger) error {
 		mux.Handle("/", http.FileServer(http.FS(sub)))
 	}
 
-	addr := fmt.Sprintf("127.0.0.1:%d", port)
-	srv := &http.Server{
-		Addr:    addr,
-		Handler: corsMiddleware(c.cfg.CORSOrigin, mux),
-	}
+	lm.handler = remoteAccessMiddleware(corsMiddleware(c.cfg.CORSOrigin, mux))
 
-	errCh := make(chan error, 1)
-	go func() {
-		logger.Printf("audiobox server listening on http://%s", addr)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			errCh <- err
-		} else {
-			errCh <- nil
-		}
-	}()
-
-	select {
-	case err := <-errCh:
-		return err
-	case <-shutdownCh:
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		logger.Printf("audiobox server shutting down")
-		return srv.Shutdown(ctx)
+	initialAddr := fmt.Sprintf("127.0.0.1:%d", port)
+	if c.cfg.ShareAddress != "" {
+		initialAddr = fmt.Sprintf("0.0.0.0:%d", port)
 	}
+	return lm.run(initialAddr, shutdownCh)
 }
 
 // corsMiddleware adds CORS headers to every response.
@@ -129,6 +194,28 @@ func corsMiddleware(origin string, next http.Handler) http.Handler {
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// remoteAccessMiddleware enforces read-only access for non-loopback clients.
+// POST, PUT, and DELETE requests from any address other than 127.0.0.1 or ::1
+// are rejected with 403 so that LAN clients can browse and stream but cannot
+// modify the collection or toggle sharing.
+func remoteAccessMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host, _, err := net.SplitHostPort(r.RemoteAddr)
+		if err != nil {
+			host = r.RemoteAddr
+		}
+		isLoopback := host == "127.0.0.1" || host == "::1"
+		if !isLoopback {
+			switch r.Method {
+			case http.MethodPost, http.MethodPut, http.MethodDelete:
+				writeJSONError(w, http.StatusForbidden, "read-only in share mode")
+				return
+			}
 		}
 		next.ServeHTTP(w, r)
 	})
@@ -183,9 +270,23 @@ func (c *Collection) handleInit(logger *log.Logger) http.HandlerFunc {
 	}
 }
 
+func parseExcludeFolders(r *http.Request) []string {
+	raw := r.URL.Query().Get("exclude")
+	if raw == "" {
+		return nil
+	}
+	var out []string
+	for _, f := range strings.Split(raw, ",") {
+		if f = strings.TrimSpace(f); f != "" {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
 func (c *Collection) handleListAlbums(logger *log.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		items, err := c.GetAlbumEntries()
+		items, err := c.GetAlbumEntries(parseExcludeFolders(r)...)
 		if err != nil {
 			logger.Printf("list albums: %v", err)
 			writeJSONError(w, http.StatusInternalServerError, err.Error())
@@ -197,7 +298,7 @@ func (c *Collection) handleListAlbums(logger *log.Logger) http.HandlerFunc {
 
 func (c *Collection) handleListArtists(logger *log.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		items, err := c.GetArtists()
+		items, err := c.GetArtists(parseExcludeFolders(r)...)
 		if err != nil {
 			logger.Printf("list artists: %v", err)
 			writeJSONError(w, http.StatusInternalServerError, err.Error())
@@ -209,13 +310,238 @@ func (c *Collection) handleListArtists(logger *log.Logger) http.HandlerFunc {
 
 func (c *Collection) handleListTitles(logger *log.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		items, err := c.GetTitles()
+		items, err := c.GetTitles(parseExcludeFolders(r)...)
 		if err != nil {
 			logger.Printf("list titles: %v", err)
 			writeJSONError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 		writeJSON(w, items)
+	}
+}
+
+func (c *Collection) handleListFolders(logger *log.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		folders, err := c.GetFolders()
+		if err != nil {
+			logger.Printf("list folders: %v", err)
+			writeJSONError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, folders)
+	}
+}
+
+func (c *Collection) handleListFolderTracks(logger *log.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		dir := r.URL.Query().Get("dir")
+		if dir == "" {
+			writeJSONError(w, http.StatusBadRequest, "dir parameter required")
+			return
+		}
+		tracks, err := c.GetFolderTracks(dir)
+		if err != nil {
+			logger.Printf("list folder-tracks %q: %v", dir, err)
+			writeJSONError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, tracks)
+	}
+}
+
+func handleShareStatus(ss *shareState, port int) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ss.mu.RLock()
+		sharing := ss.sharing
+		addr := ss.shareAddr
+		ss.mu.RUnlock()
+		shareURL := ""
+		if sharing && addr != "" {
+			shareURL = fmt.Sprintf("http://%s:%d", addr, port)
+		}
+		writeJSON(w, map[string]any{
+			"sharing":       sharing,
+			"share_address": addr,
+			"share_url":     shareURL,
+		})
+	}
+}
+
+func handleShareAddresses() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ifaces, err := net.Interfaces()
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		var addrs []string
+		for _, iface := range ifaces {
+			if iface.Flags&net.FlagLoopback != 0 || iface.Flags&net.FlagUp == 0 {
+				continue
+			}
+			ifAddrs, err := iface.Addrs()
+			if err != nil {
+				continue
+			}
+			for _, a := range ifAddrs {
+				var ip net.IP
+				switch v := a.(type) {
+				case *net.IPNet:
+					ip = v.IP
+				case *net.IPAddr:
+					ip = v.IP
+				}
+				if ip == nil || ip.IsLoopback() {
+					continue
+				}
+				if ip4 := ip.To4(); ip4 != nil {
+					addrs = append(addrs, ip4.String())
+				}
+			}
+		}
+		if addrs == nil {
+			addrs = []string{}
+		}
+		writeJSON(w, addrs)
+	}
+}
+
+func (c *Collection) handleShareOn(lm *listenerManager, logger *log.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Address string `json:"address"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Address == "" {
+			writeJSONError(w, http.StatusBadRequest, "address required")
+			return
+		}
+		if err := c.SetShareAddress(body.Address); err != nil {
+			logger.Printf("share on: save config: %v", err)
+		}
+		pollURL := fmt.Sprintf("http://127.0.0.1:%d/api/share/status", lm.port)
+		writeJSON(w, map[string]string{"status": "restarting", "poll_url": pollURL})
+		go func() {
+			// Small delay so the HTTP response is fully delivered before the
+			// listener restarts and closes the current connection.
+			time.Sleep(300 * time.Millisecond)
+			lm.ctrl <- listenRequest{
+				addr:      fmt.Sprintf("0.0.0.0:%d", lm.port),
+				sharing:   true,
+				shareAddr: body.Address,
+				done:      make(chan struct{}),
+			}
+		}()
+	}
+}
+
+func (c *Collection) handleShareOff(lm *listenerManager, logger *log.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		pollURL := fmt.Sprintf("http://127.0.0.1:%d/api/share/status", lm.port)
+		writeJSON(w, map[string]string{"status": "restarting", "poll_url": pollURL})
+		go func() {
+			time.Sleep(300 * time.Millisecond)
+			lm.ctrl <- listenRequest{
+				addr: fmt.Sprintf("127.0.0.1:%d", lm.port),
+				done: make(chan struct{}),
+			}
+		}()
+	}
+}
+
+func (c *Collection) handleGetExcludedFolders() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		folders := c.cfg.ExcludedFolders
+		if folders == nil {
+			folders = []string{}
+		}
+		writeJSON(w, folders)
+	}
+}
+
+func (c *Collection) handleSetExcludedFolders(logger *log.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Excluded []string `json:"excluded"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid JSON")
+			return
+		}
+		if err := c.SetExcludedFolders(body.Excluded); err != nil {
+			logger.Printf("set excluded folders: %v", err)
+			writeJSONError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if body.Excluded == nil {
+			body.Excluded = []string{}
+		}
+		writeJSON(w, body.Excluded)
+	}
+}
+
+func (c *Collection) handleListPlaylists(logger *log.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		lists, err := c.GetPlaylists()
+		if err != nil {
+			logger.Printf("list playlists: %v", err)
+			writeJSONError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, lists)
+	}
+}
+
+func (c *Collection) handleSavePlaylist(logger *log.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Name     string   `json:"name"`
+			TrackIDs []string `json:"trackIds"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Name == "" {
+			writeJSONError(w, http.StatusBadRequest, "name and trackIds required")
+			return
+		}
+		id, err := c.SavePlaylist(body.Name, body.TrackIDs)
+		if err != nil {
+			logger.Printf("save playlist: %v", err)
+			writeJSONError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		w.WriteHeader(http.StatusCreated)
+		writeJSON(w, map[string]string{"status": "created", "id": id})
+	}
+}
+
+func (c *Collection) handleLoadPlaylist(logger *log.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		tracks, err := c.LoadPlaylist(id)
+		if err != nil {
+			if strings.Contains(err.Error(), "no rows") {
+				writeJSONError(w, http.StatusNotFound, "playlist not found")
+				return
+			}
+			logger.Printf("load playlist %s: %v", id, err)
+			writeJSONError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, tracks)
+	}
+}
+
+func (c *Collection) handleDeletePlaylist(logger *log.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		if err := c.DeletePlaylist(id); err != nil {
+			if strings.Contains(err.Error(), "no rows") {
+				writeJSONError(w, http.StatusNotFound, "playlist not found")
+				return
+			}
+			logger.Printf("delete playlist %s: %v", id, err)
+			writeJSONError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, map[string]string{"status": "deleted", "id": id})
 	}
 }
 
@@ -392,13 +718,10 @@ func (c *Collection) handleAudio(logger *log.Logger) http.HandlerFunc {
 			return
 		}
 
-		absPath, err := filepath.Abs(info.ContentURL)
-		if err != nil {
-			writeJSONError(w, http.StatusInternalServerError, "resolving path")
-			return
-		}
+		// content_url is stored relative to AudioDir; resolve to absolute for open + security check.
+		absPath := filepath.Join(filepath.Clean(c.cfg.AudioDir), info.ContentURL)
 
-		// Guard: file must be within AudioDir.
+		// Guard: file must be within AudioDir (catches any .. traversal in stored paths).
 		audioDir := filepath.Clean(c.cfg.AudioDir) + string(filepath.Separator)
 		if !strings.HasPrefix(absPath+string(filepath.Separator), audioDir) {
 			logger.Printf("audio: path %q outside AudioDir", absPath)
@@ -441,12 +764,16 @@ POST /api/init     — initialise or upgrade the ~/Audio collection
 ## List
 
 ` + "```" + `
-GET /api/list/albums    — distinct album names
-GET /api/list/artists   — distinct artist names
-GET /api/list/titles    — distinct recording titles
+GET /api/list/albums         — distinct album names
+GET /api/list/artists        — distinct artist names
+GET /api/list/titles         — distinct recording titles
+GET /api/list/folders        — directories containing audio files
+GET /api/list/folder-tracks  — tracks inside a folder (?dir=relative/path)
 ` + "```" + `
 
-Each returns a JSON array of strings.
+albums, artists, and titles each return a JSON array of strings.
+folders returns a JSON array of FolderEntry objects: {path, name, trackCount}.
+folder-tracks returns a JSON array of AudioInfo objects.
 
 ## Search
 
@@ -499,6 +826,29 @@ GET /api/audio/{id}
 Streams the audio file for the record identified by UUID.
 Supports HTTP Range requests so browser ` + "`<audio>`" + ` elements can seek.
 Returns 403 if the file is outside the collection's audioDir.
+
+## Share
+
+` + "```" + `
+GET  /api/share/status     — {sharing, share_address, share_url}
+GET  /api/share/addresses  — []string of available LAN IPv4 addresses
+POST /api/share/on         — body: {"address":"192.168.1.5"}; responds immediately with {status, poll_url}
+POST /api/share/off        — responds immediately with {status, poll_url}
+` + "```" + `
+
+share/on and share/off restart the listener asynchronously. Poll share/status until
+sharing changes. POST endpoints are blocked (403) for non-loopback clients.
+
+## Playlists
+
+` + "```" + `
+GET    /api/playlists      — []PlaylistInfo (id, name, trackCount, created)
+POST   /api/playlists      — body: {"name":"…","trackIds":["uuid",…]}; returns {status, id}
+GET    /api/playlists/{id} — []AudioInfo for the playlist's tracks in order
+DELETE /api/playlists/{id} — remove playlist; 404 when not found
+` + "```" + `
+
+POST and DELETE are blocked (403) for non-loopback clients in share mode.
 
 ## Shutdown
 

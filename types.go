@@ -127,6 +127,24 @@ type Album struct {
 	Dir         string `json:"dir"`
 }
 
+/** FolderEntry represents a directory that contains one or more audio files.
+ * Path is relative to the collection's AudioDir. Name is the deslugified last
+ * path component, suitable for display. TrackCount is the number of audio files
+ * directly or indirectly inside the folder.
+ *
+ * Example:
+ *   FolderEntry{
+ *     Path:       "Jazz/Miles-Davis/Kind-Of-Blue",
+ *     Name:       "Kind Of Blue",
+ *     TrackCount: 9,
+ *   }
+ */
+type FolderEntry struct {
+	Path       string `json:"path"`
+	Name       string `json:"name"`
+	TrackCount int    `json:"trackCount"`
+}
+
 /** Agent represents a schema.org Person or Organization with optional persistent identifiers.
  *
  * Parameters:
@@ -147,4 +165,22 @@ type Agent struct {
 	Type        string      `json:"type"                    yaml:"type"`
 	Name        string      `json:"name"                    yaml:"name"`
 	Identifiers Identifiers `json:"identifiers,omitempty"   yaml:"identifiers,omitempty"`
+}
+
+/** PlaylistInfo describes a saved playlist stored in the collection database.
+ *
+ * Parameters:
+ *   ID         (string) — UUID v4 identifier
+ *   Name       (string) — human-readable playlist name
+ *   TrackCount (int)    — number of tracks in the playlist
+ *   Created    (string) — ISO 8601 creation timestamp
+ *
+ * Example:
+ *   pl := audiobox.PlaylistInfo{ID: "…", Name: "Evening Drive", TrackCount: 12}
+ */
+type PlaylistInfo struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	TrackCount int    `json:"trackCount"`
+	Created    string `json:"created"`
 }

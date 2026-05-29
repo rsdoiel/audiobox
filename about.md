@@ -1,8 +1,9 @@
 ---
 title: audiobox
-abstract: "audiobox is a go module that for managing audio metadata in an SQLite3 database. It uses &quot;https://github.com/dhowden/tag&quot; module to extract metadata that may be found in the audio file itself.
+abstract: |-
+  audiobox is a go module that for managing audio metadata in an SQLite3 database. It uses "https://github.com/dhowden/tag" module to extract metadata that may be found in the audio file itself.
 
-This software is for Lourdes."
+  This software is for Lourdes.
 authors:
   - family_name: Doiel
     given_name: R. S.
@@ -15,7 +16,7 @@ version: 0.0.3
 license_url: https://www.gnu.org/licenses/agpl-3.0.txt
 
 programming_language:
-  - Go &gt;&#x3D; 1.26.2
+  - Go >= 1.26.2
   - TypeScript
 
 
@@ -31,24 +32,24 @@ About this software
 - Web UI improvements including a new shuffle feature
 - Improve app deployment for macOS
 
-### Authors
+## Authors
 
-- R. S. Doiel, <https://orcid.org/0000-0003-0900-6903>
-
-
+- [R. S. Doiel](https://orcid.org/0000-0003-0900-6903)
 
 
 
 
-audiobox is a go module that for managing audio metadata in an SQLite3 database. It uses &quot;https://github.com/dhowden/tag&quot; module to extract metadata that may be found in the audio file itself.
+
+
+audiobox is a go module that for managing audio metadata in an SQLite3 database. It uses "https://github.com/dhowden/tag" module to extract metadata that may be found in the audio file itself.
 
 This software is for Lourdes.
 
-- License: <https://www.gnu.org/licenses/agpl-3.0.txt>
-- GitHub: <https://github.com/rsdoiel/audiobox>
-- Issues: <https://github.com/rsdoiel/audiobox/issues>
+- [License](https://www.gnu.org/licenses/agpl-3.0.txt)
+- [Code Repository](https://github.com/rsdoiel/audiobox)
+  - [Issue Tracker](https://github.com/rsdoiel/audiobox/issues)
 
-### Programming languages
+## Programming languages
 
 - Go >= 1.26.2
 - TypeScript
@@ -56,17 +57,17 @@ This software is for Lourdes.
 
 
 
-### Software Requirements
+## Software Requirements
 
 - Go >= 1.26.2
 
 
-### Software Suggestions
+## Software Suggestions
 
-- CMTools &gt;&#x3D; 0.0.40
-- Pandoc &gt;&#x3D; 3.1
-- GNU Make &gt;&#x3D; 3
-- Deno &gt;&#x3D; 2.4.0
-- FFmpeg &gt;&#x3D; 6.0
+- CMTools >= 0.0.40
+- Pandoc >= 3.1
+- GNU Make >= 3
+- Deno >= 2.4.0
+- FFmpeg >= 6.0
 
 
