@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en-US">
+<head>
+    <title>audiobox</title>
+    <link rel="stylesheet" href="/css/site.css">
+</head>
+<body>
+<nav>
+<ul>
+    <li><a href="/">Home</a></li>
+    <li><a href="index.html">README</a></li>
+    <li><a href="LICENSE">LICENSE</a></li>
+    <li><a href="INSTALL.html">INSTALL</a></li>
+    <li><a href="user_manual.html">User Manual</a></li>
+    <li><a href="about.html">About</a></li>
+    <!-- <li><a href="search.html">Search</a></li> -->
+    <li><a href="https://github.com/rsdoiel/audiobox">GitHub</a></li>
+</ul>
+</nav>
+<section>
+<h1 id="audiobox-design-document">audiobox Design Document</h1>
+<h2 id="overview">Overview</h2>
+<p>audiobox is a local audio collection manager. It indexes audio files
+from a directory tree into a SQLite3 database, exposes a JSON HTTP API,
+and serves a self-contained web UI for browsing and playback. A terminal
+(TUI) player is also provided. The entire system ships as a single Go
+binary with the frontend embedded.</p>
+<hr />
+<h2 id="architecture">Architecture</h2>
+<pre><code>┌─────────────────────────────────────────────────────┐
+│  audiobox binary                                    │
+│                                                     │
+│  cmd/audiobox/main.go   ← CLI entry point           │
+│                                                     │
+│  audiobox package (Go)                              │
+│  ├── audiobox.go        ← Collection, CRUD, search  │
+│  ├── config.go          ← CollectionConfig, DB init │
+│  ├── server.go          ← HTTP API, listener mgmt   │
+│  ├── player.go          ← TUI player                │
+│  └── types.go           ← AudioInfo, Agent, Album   │
+│                                                     │
+│  htdocs/ (embedded via go:embed)                    │
+│  ├── index.html                                     │
+│  └── module/audiobox.js ← bundled from TypeScript   │
+└─────────────────────────────────────────────────────┘
+
+TypeScript sources (compiled separately, not part of Go build)
+├── audiobox_api.ts        ← typed fetch wrapper
+├── audiobox_player.ts     ← &lt;audiobox-player&gt; web component
+└── deno.json              ← build: deno bundle → htdocs/module/audiobox.js</code></pre>
+<h3 id="data-flow">Data flow</h3>
+<pre><code>Audio files on disk
+      │ ScanDirectories()
+      ▼
+SQLite3 database (audio.db)
+  ├── audio_files table     ← schema.org AudioObject/MusicRecording metadata
+  ├── search_index (FTS5)   ← title, album, genre, artist for fast text search
+  ├── playlists table       ← (planned) saved playlists
+  └── playlist_tracks table ← (planned) ordered track membership
+      │ HTTP JSON API
+      ▼
+&lt;audiobox-player&gt; web component (Shadow DOM)
+  ├── Browse panel    ← Albums / Artists / Titles / Folders tabs
+  ├── Player          ← always-visible transport controls
+  ├── Queue panel     ← FIFO play queue with shuffle, clear, runtime estimate
+  └── Library panel   ← Scan, Sweep, Share controls</code></pre>
+<hr />
+<h2 id="data-model">Data Model</h2>
+<h3 id="audio_files">audio_files</h3>
+<table>
+<colgroup>
+<col style="width: 26%" />
+<col style="width: 14%" />
+<col style="width: 58%" />
+</colgroup>
+<thead>
+<tr>
+<th>Column</th>
+<th>Type</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>id</td>
+<td>TEXT PK</td>
+<td>UUID v4</td>
+</tr>
+<tr>
+<td>schema_type</td>
+<td>TEXT</td>
+<td>“AudioObject” or “MusicRecording”</td>
+</tr>
+<tr>
+<td>name</td>
+<td>TEXT</td>
+<td>recording title</td>
+</tr>
+<tr>
+<td>description</td>
+<td>TEXT</td>
+<td></td>
+</tr>
+<tr>
+<td>content_url</td>
+<td>TEXT UNIQ</td>
+<td>absolute path to file on disk</td>
+</tr>
+<tr>
+<td>encoding_format</td>
+<td>TEXT</td>
+<td>MIME type (audio/flac, audio/mpeg, …)</td>
+</tr>
+<tr>
+<td>duration</td>
+<td>TEXT</td>
+<td>ISO 8601 (PT3M45S); set on ingest</td>
+</tr>
+<tr>
+<td>date_published</td>
+<td>TEXT</td>
+<td>year or full date from tags</td>
+</tr>
+<tr>
+<td>in_language</td>
+<td>TEXT</td>
+<td></td>
+</tr>
+<tr>
+<td>genre</td>
+<td>TEXT</td>
+<td></td>
+</tr>
+<tr>
+<td>identifiers</td>
+<td>JSON</td>
+<td>[]Identifier (ISRC, DOI, ARK, …)</td>
+</tr>
+<tr>
+<td>by_artist</td>
+<td>JSON</td>
+<td>[]Agent (Person or Organization)</td>
+</tr>
+<tr>
+<td>in_album</td>
+<td>TEXT</td>
+<td></td>
+</tr>
+<tr>
+<td>disc_number</td>
+<td>INTEGER</td>
+<td>default 0</td>
+</tr>
+<tr>
+<td>track_number</td>
+<td>INTEGER</td>
+<td>default 0</td>
+</tr>
+<tr>
+<td>isrc_code</td>
+<td>TEXT</td>
+<td></td>
+</tr>
+<tr>
+<td>recording_of</td>
+<td>TEXT</td>
+<td>composition title when different from name</td>
+</tr>
+<tr>
+<td>checksum</td>
+<td>TEXT</td>
+<td>hex SHA-256</td>
+</tr>
+<tr>
+<td>checksum_algorithm</td>
+<td>TEXT</td>
+<td>“sha256”</td>
+</tr>
+<tr>
+<td>created</td>
+<td>TIMESTAMP</td>
+<td></td>
+</tr>
+<tr>
+<td>updated</td>
+<td>TIMESTAMP</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h3 id="search_index-fts5">search_index (FTS5)</h3>
+<p>Columns: <code>audio_id</code> (UNINDEXED), <code>name</code>,
+<code>in_album</code>, <code>genre</code>, <code>recording_of</code>,
+<code>artist_names</code>. Tokenizer:
+<code>unicode61 remove_diacritics 1</code>.</p>
+<h3 id="playlists-planned">playlists (planned)</h3>
+<table>
+<thead>
+<tr>
+<th>Column</th>
+<th>Type</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>id</td>
+<td>TEXT PK</td>
+<td>UUID v4</td>
+</tr>
+<tr>
+<td>name</td>
+<td>TEXT</td>
+<td></td>
+</tr>
+<tr>
+<td>created</td>
+<td>TIMESTAMP</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h3 id="playlist_tracks-planned">playlist_tracks (planned)</h3>
+<table>
+<colgroup>
+<col style="width: 18%" />
+<col style="width: 13%" />
+<col style="width: 68%" />
+</colgroup>
+<thead>
+<tr>
+<th>Column</th>
+<th>Type</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>playlist_id</td>
+<td>TEXT FK</td>
+<td>→ playlists(id) ON DELETE CASCADE</td>
+</tr>
+<tr>
+<td>position</td>
+<td>INTEGER</td>
+<td>1-based ordering</td>
+</tr>
+<tr>
+<td>audio_id</td>
+<td>TEXT FK</td>
+<td>→ audio_files(id) ON DELETE CASCADE</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="collectionconfig-audio.yaml">CollectionConfig (audio.yaml)</h2>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">name</span><span class="kw">:</span><span class="at"> audio</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="fu">description</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;Audio collections for alice&quot;</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="fu">database</span><span class="kw">:</span><span class="at"> audio.db</span><span class="co">       # relative to this file</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="fu">audioDir</span><span class="kw">:</span><span class="at"> ~/Audio</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="fu">htdocs</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;&quot;</span><span class="co">               # empty → use embedded htdocs</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="fu">port</span><span class="kw">:</span><span class="at"> </span><span class="dv">8010</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="fu">corsOrigin</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;&quot;</span><span class="co">           # &quot;&quot; → &quot;*&quot;; &quot;off&quot; → no CORS headers</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="fu">shareAddress</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;&quot;</span><span class="co">         # preferred LAN IP for share mode; empty = not configured</span></span></code></pre></div>
+<p><code>shareAddress</code> is written by
+<code>audiobox server share IP_ADDRESS</code> and read by
+<code>audiobox server share</code> on subsequent runs. It is never set
+by the web UI (which sends the address via
+<code>POST /api/share/on</code>).</p>
+<hr />
+<h2 id="http-api-reference">HTTP API Reference</h2>
+<p>All endpoints are relative to the server address (default
+<code>http://127.0.0.1:8010</code>). JSON bodies use
+<code>Content-Type: application/json</code>.</p>
+<h3 id="collection">Collection</h3>
+<pre><code>GET  /api/status</code></pre>
+<p>Returns collection metadata. Does not include share state (see
+<code>/api/share/status</code>).</p>
+<div class="sourceCode" id="cb5"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;initialized&quot;</span><span class="fu">:</span> <span class="kw">true</span><span class="fu">,</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;version&quot;</span><span class="fu">:</span> <span class="st">&quot;0.1.0&quot;</span><span class="fu">,</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;collection_name&quot;</span><span class="fu">:</span> <span class="st">&quot;audio&quot;</span><span class="fu">,</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;audio_dir&quot;</span><span class="fu">:</span> <span class="st">&quot;/home/alice/Audio&quot;</span><span class="fu">,</span></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;track_count&quot;</span><span class="fu">:</span> <span class="dv">1234</span></span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<pre><code>POST /api/init</code></pre>
+<p>Initialises or upgrades the <code>~/Audio</code> collection
+layout.</p>
+<h3 id="browse">Browse</h3>
+<pre><code>GET /api/list/albums     → []AlbumEntry
+GET /api/list/artists    → []string
+GET /api/list/titles     → []string
+GET /api/list/folders    → []FolderEntry   (planned)</code></pre>
+<p><code>AlbumEntry</code>: <code>{ name, displayName, dir }</code>
+<code>FolderEntry</code>: <code>{ path, name, trackCount }</code></p>
+<pre><code>GET /api/list/folder-tracks?dir=ENCODED_PATH → []AudioInfo   (planned)</code></pre>
+<p>Returns all tracks whose <code>content_url</code> begins with
+<code>dir</code>.</p>
+<h3 id="search">Search</h3>
+<pre><code>GET /api/search?q=QUERY → []AudioInfo</code></pre>
+<p>Query syntax: plain term, <code>"quoted phrase"</code>,
+<code>/regex/</code>, <code>field:term</code>,
+<code>field:"phrase"</code>, <code>field:/regex/</code>. Field aliases:
+<code>title</code>/<code>name</code>, <code>album</code>,
+<code>artist</code>, <code>genre</code>,
+<code>recording</code>/<code>recording_of</code>.</p>
+<h3 id="records">Records</h3>
+<pre><code>GET    /api/show/{id}    → AudioInfo
+DELETE /api/show/{id}    → { &quot;status&quot;: &quot;deleted&quot;, &quot;id&quot;: &quot;…&quot; }</code></pre>
+<h3 id="audio-streaming">Audio streaming</h3>
+<pre><code>GET /api/audio/{id}</code></pre>
+<p>Streams the audio file. Supports HTTP Range requests for seeking.
+Returns 403 if <code>content_url</code> is outside
+<code>audioDir</code>.</p>
+<h3 id="scan-sweep-write-blocked-in-read-only-share-mode">Scan / Sweep
+(write — blocked in read-only share mode)</h3>
+<pre><code>POST /api/scan           → 202 { &quot;status&quot;: &quot;started&quot;, &quot;started_at&quot;: &quot;…&quot; }
+GET  /api/scan/status    → AsyncStatus
+POST /api/sweep          → 202 { &quot;status&quot;: &quot;started&quot;, &quot;started_at&quot;: &quot;…&quot; }
+GET  /api/sweep/status   → AsyncStatus + records_removed</code></pre>
+<p><code>AsyncStatus</code>:
+<code>{ status: "idle"|"running"|"completed"|"error", started_at?, completed_at?, error? }</code></p>
+<h3
+id="playlists-planned-write-endpoints-blocked-in-read-only-share-mode">Playlists
+(planned — write endpoints blocked in read-only share mode)</h3>
+<pre><code>GET    /api/playlists         → []PlaylistInfo
+POST   /api/playlists         body: { &quot;name&quot;: &quot;…&quot;, &quot;trackIds&quot;: [&quot;uuid&quot;, …] }
+GET    /api/playlists/{id}    → []AudioInfo
+DELETE /api/playlists/{id}</code></pre>
+<p><code>PlaylistInfo</code>:
+<code>{ id, name, trackCount, created }</code></p>
+<h3 id="network-sharing">Network sharing</h3>
+<pre><code>GET  /api/share/status</code></pre>
+<div class="sourceCode" id="cb15"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;sharing&quot;</span><span class="fu">:</span> <span class="kw">false</span><span class="fu">,</span></span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;share_address&quot;</span><span class="fu">:</span> <span class="st">&quot;&quot;</span><span class="fu">,</span></span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;share_url&quot;</span><span class="fu">:</span> <span class="st">&quot;&quot;</span></span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>When <code>sharing</code> is true:</p>
+<div class="sourceCode" id="cb16"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;sharing&quot;</span><span class="fu">:</span> <span class="kw">true</span><span class="fu">,</span></span>
+<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;share_address&quot;</span><span class="fu">:</span> <span class="st">&quot;192.168.1.5&quot;</span><span class="fu">,</span></span>
+<span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;share_url&quot;</span><span class="fu">:</span> <span class="st">&quot;http://192.168.1.5:8010&quot;</span></span>
+<span id="cb16-5"><a href="#cb16-5" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<pre><code>GET /api/share/addresses → []string</code></pre>
+<p>Returns the machine’s non-loopback IPv4 addresses, for the UI address
+picker.</p>
+<div class="sourceCode" id="cb18"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="ot">[</span><span class="st">&quot;192.168.1.5&quot;</span><span class="ot">,</span> <span class="st">&quot;10.0.0.12&quot;</span><span class="ot">]</span></span></code></pre></div>
+<pre><code>POST /api/share/on    body: { &quot;address&quot;: &quot;192.168.1.5&quot; }
+POST /api/share/off</code></pre>
+<p>Both respond immediately (before the listener restarts):</p>
+<div class="sourceCode" id="cb20"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span> <span class="dt">&quot;status&quot;</span><span class="fu">:</span> <span class="st">&quot;restarting&quot;</span><span class="fu">,</span> <span class="dt">&quot;poll_url&quot;</span><span class="fu">:</span> <span class="st">&quot;http://127.0.0.1:8010/api/share/status&quot;</span> <span class="fu">}</span></span></code></pre></div>
+<p>Both endpoints are <strong>blocked in read-only share mode</strong>
+(non-loopback callers receive 403).</p>
+<h3 id="utility">Utility</h3>
+<pre><code>POST /api/shutdown
+GET  /api/help          → text/markdown</code></pre>
+<hr />
+<h2 id="network-sharing-design">Network Sharing Design</h2>
+<h3 id="motivation">Motivation</h3>
+<p>By default the server binds to <code>127.0.0.1</code> (loopback
+only). Share mode rebinds to <code>0.0.0.0</code> so that other devices
+on the local network can stream audio from the collection. The owner
+retains full administrative access; remote clients are restricted to
+read-only operations.</p>
+<h3 id="listener-architecture">Listener architecture</h3>
+<p>A single <code>http.Server</code> runs inside a managed goroutine. A
+<code>listenerManager</code> struct owns the goroutine and communicates
+via a control channel:</p>
+<div class="sourceCode" id="cb22"><pre
+class="sourceCode go"><code class="sourceCode go"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a><span class="kw">type</span> listenRequest <span class="kw">struct</span> <span class="op">{</span></span>
+<span id="cb22-2"><a href="#cb22-2" aria-hidden="true" tabindex="-1"></a>    addr <span class="dt">string</span>        <span class="co">// e.g. &quot;127.0.0.1:8010&quot; or &quot;0.0.0.0:8010&quot;</span></span>
+<span id="cb22-3"><a href="#cb22-3" aria-hidden="true" tabindex="-1"></a>    done <span class="kw">chan</span> <span class="dt">error</span>     <span class="co">// closed after the new listener is up</span></span>
+<span id="cb22-4"><a href="#cb22-4" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb22-5"><a href="#cb22-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb22-6"><a href="#cb22-6" aria-hidden="true" tabindex="-1"></a><span class="kw">type</span> listenerManager <span class="kw">struct</span> <span class="op">{</span></span>
+<span id="cb22-7"><a href="#cb22-7" aria-hidden="true" tabindex="-1"></a>    port    <span class="dt">int</span></span>
+<span id="cb22-8"><a href="#cb22-8" aria-hidden="true" tabindex="-1"></a>    handler http<span class="op">.</span>Handler</span>
+<span id="cb22-9"><a href="#cb22-9" aria-hidden="true" tabindex="-1"></a>    ctrl    <span class="kw">chan</span> listenRequest</span>
+<span id="cb22-10"><a href="#cb22-10" aria-hidden="true" tabindex="-1"></a>    mu      sync<span class="op">.</span>RWMutex</span>
+<span id="cb22-11"><a href="#cb22-11" aria-hidden="true" tabindex="-1"></a>    sharing <span class="dt">bool</span></span>
+<span id="cb22-12"><a href="#cb22-12" aria-hidden="true" tabindex="-1"></a>    shareAddr <span class="dt">string</span></span>
+<span id="cb22-13"><a href="#cb22-13" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>On receiving a <code>listenRequest</code> the manager: 1. Calls
+<code>srv.Shutdown(ctx)</code> on the current server (5 s timeout). 2.
+Creates a new <code>http.Server</code> bound to <code>req.addr</code>.
+3. Starts it in a goroutine. 4. Closes <code>req.done</code> when the
+new server is accepting connections.</p>
+<p>The outer <code>Serve()</code> call starts the manager and blocks
+until the global shutdown channel fires, at which point both the manager
+and the current server are stopped.</p>
+<h3 id="access-control">Access control</h3>
+<p>A <code>remoteAccessMiddleware</code> wraps the mux. For every
+request it checks <code>r.RemoteAddr</code>:</p>
+<ul>
+<li>If the IP is <code>127.0.0.1</code> or <code>::1</code> → full
+access, pass through unchanged.</li>
+<li>Otherwise → read-only: <code>POST</code>, <code>DELETE</code>, and
+<code>PUT</code> methods return <code>403 Forbidden</code> with
+<code>{"error":"read-only in share mode"}</code>.</li>
+</ul>
+<p>This also blocks <code>POST /api/share/on</code> and
+<code>POST /api/share/off</code> from LAN clients.</p>
+<h3 id="cli">CLI</h3>
+<pre><code>audiobox server              # binds 127.0.0.1:8010
+audiobox server share        # binds 0.0.0.0:8010 using saved shareAddress
+audiobox server share 192.168.1.5   # saves shareAddress, binds 0.0.0.0:8010</code></pre>
+<p><code>audiobox server share</code> without an address reads
+<code>shareAddress</code> from <code>audio.yaml</code> and exits with an
+error if that field is empty.</p>
+<p><code>audiobox server share IP_ADDRESS</code> writes
+<code>shareAddress: IP_ADDRESS</code> to <code>audio.yaml</code> before
+starting.</p>
+<h3 id="web-ui-flow">Web UI flow</h3>
+<p><strong>Enabling share:</strong> 1. Owner clicks Share button → UI
+calls <code>GET /api/share/addresses</code>. 2. Dialog shows list of
+available LAN IPs; owner picks one. 3. UI calls
+<code>POST /api/share/on</code> with
+<code>{"address":"192.168.1.5"}</code>. 4. Server responds with
+<code>{"status":"restarting","poll_url":"http://127.0.0.1:8010/api/share/status"}</code>.
+5. UI polls <code>poll_url</code> until <code>sharing === true</code>.
+6. Share button shows:
+<code>Sharing: http://192.168.1.5:8010 [Copy] [Disable]</code>. 7. Owner
+stays on <code>http://127.0.0.1:8010</code> — full access throughout
+(0.0.0.0 covers loopback).</p>
+<p><strong>Disabling share:</strong> 1. Owner clicks Disable → UI calls
+<code>POST /api/share/off</code>. 2. Server responds with
+<code>{"status":"restarting","poll_url":"http://127.0.0.1:8010/api/share/status"}</code>.
+3. UI polls <code>poll_url</code> until <code>sharing === false</code>.
+4. Share button returns to “Share” state.</p>
+<hr />
+<h2 id="browse-queue-design">Browse &amp; Queue Design</h2>
+<h3 id="browse-drill-down">Browse drill-down</h3>
+<p>Clicking a browse item (album, artist, title, folder) opens a
+<strong>track detail view</strong> inside the list panel — it does not
+modify the queue or start playback. The detail view shows:</p>
+<pre><code>[← Back]  Albums: Goldberg Variations          [⊕ Add All]
+─────────────────────────────────────────────────────────
+Aria                       Glenn Gould · Goldberg  [⊕]
+Variation 1                Glenn Gould · Goldberg  [⊕]
+…</code></pre>
+<p><code>⊕</code> on an individual track adds that one track to the
+queue. <code>⊕ Add All</code> adds all tracks in the detail view to the
+queue. <code>← Back</code> returns to the browse list without changing
+the queue.</p>
+<p>Queue contents are never modified by browsing — only by explicit
+<code>⊕</code> actions.</p>
+<h3 id="queue-behaviour">Queue behaviour</h3>
+<ul>
+<li>Items are added to the tail of the queue via <code>⊕</code>
+buttons.</li>
+<li>When the first item is added to an empty queue the player loads (but
+does not start) that track — <code>audioEl.src</code> is set, play does
+not begin until the user presses ▶.</li>
+<li>When a track finishes playing (the <code>ended</code> event) it is
+<strong>removed</strong> from the queue. The next item shifts to the
+front and loads automatically; playback continues without pause.</li>
+<li>Shuffle applies a Fisher-Yates shuffle to all unplayed tracks (those
+after <code>currentIndex</code>).</li>
+<li>The queue header shows track count and total estimated runtime
+derived from <code>duration</code> fields (ISO 8601; tracks with no
+duration contribute 0).</li>
+<li>Individual items can be removed via a <code>×</code> button on each
+queue row.</li>
+<li>A Clear button empties the queue and resets the player to idle.</li>
+</ul>
+<h3 id="saving-and-loading-playlists">Saving and loading playlists</h3>
+<ul>
+<li>“Save as Playlist” button in the queue header prompts for a name and
+calls <code>POST /api/playlists</code> with the current queue’s track
+IDs.</li>
+<li>A Playlists section (or tab) lists saved playlists. Clicking a
+playlist calls <code>GET /api/playlists/{id}</code> and appends the
+tracks to the queue via <code>_addToQueue</code>.</li>
+</ul>
+<hr />
+<h2 id="search-design">Search Design</h2>
+<h3 id="current-behaviour">Current behaviour</h3>
+<p><code>GET /api/search?q=QUERY</code> returns a flat
+<code>[]AudioInfo</code> ranked by relevance. The query engine tries
+FTS5 first and falls back to Levenshtein fuzzy search.</p>
+<h3 id="planned-typed-result-groups">Planned: typed result groups</h3>
+<p>The frontend issues up to four parallel searches for a user query
+<code>q</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Search</th>
+<th>API call</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Album matches</td>
+<td><code>GET /api/search?q=album:"q"</code></td>
+</tr>
+<tr>
+<td>Artist matches</td>
+<td><code>GET /api/search?q=artist:"q"</code></td>
+</tr>
+<tr>
+<td>Title matches</td>
+<td><code>GET /api/search?q=title:"q"</code></td>
+</tr>
+<tr>
+<td>Folder matches</td>
+<td>client-side filter of loaded folder names</td>
+</tr>
+</tbody>
+</table>
+<p>Results are grouped by category in the UI:</p>
+<pre><code>Albums matching &quot;bach&quot;
+  Bach: The Goldberg Variations  [⊕]
+  Bach: Brandenburg Concertos    [⊕]
+
+Artists matching &quot;bach&quot;
+  Johann Sebastian Bach          [⊕]
+
+Titles matching &quot;bach&quot;
+  Bachianas Brasileiras No. 5    [⊕]</code></pre>
+<p>Each entry has a <code>⊕</code> to add to queue and a <code>⊖</code>
+to remove matching tracks from the queue. The <code>⊕</code> on a group
+header adds all tracks for that item.</p>
+<p>This requires no new backend endpoints — all field-scoped query
+syntax already exists.</p>
+<hr />
+<h2 id="folder-support-design">Folder Support Design</h2>
+<h3 id="motivation-1">Motivation</h3>
+<p>The existing Albums / Artists / Titles browse tabs are tag-driven.
+Folders provide a filesystem-native view that works correctly even when
+tags are incomplete, and enables include/exclude by directory
+(e.g. excluding a “Christmas Music” folder outside the holiday
+season).</p>
+<h3 id="backend">Backend</h3>
+<p>New method <code>GetFolders() ([]FolderEntry, error)</code> on
+<code>Collection</code>:</p>
+<div class="sourceCode" id="cb26"><pre
+class="sourceCode go"><code class="sourceCode go"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a><span class="kw">type</span> FolderEntry <span class="kw">struct</span> <span class="op">{</span></span>
+<span id="cb26-2"><a href="#cb26-2" aria-hidden="true" tabindex="-1"></a>    Path       <span class="dt">string</span> <span class="st">`json:&quot;path&quot;`</span></span>
+<span id="cb26-3"><a href="#cb26-3" aria-hidden="true" tabindex="-1"></a>    Name       <span class="dt">string</span> <span class="st">`json:&quot;name&quot;`</span>        <span class="co">// deslugified last component</span></span>
+<span id="cb26-4"><a href="#cb26-4" aria-hidden="true" tabindex="-1"></a>    TrackCount <span class="dt">int</span>    <span class="st">`json:&quot;trackCount&quot;`</span></span>
+<span id="cb26-5"><a href="#cb26-5" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>Implemented by querying distinct
+<code>filepath.Dir(content_url)</code> values and counting tracks per
+directory.</p>
+<p>New endpoints: - <code>GET /api/list/folders</code> — returns
+<code>[]FolderEntry</code> sorted by <code>Path</code> -
+<code>GET /api/list/folder-tracks?dir=ENCODED_PATH</code> — returns
+<code>[]AudioInfo</code> for all tracks under <code>dir</code> (LIKE
+prefix match)</p>
+<h3 id="frontend">Frontend</h3>
+<p>A “Folders” tab is added to the browse panel alongside Albums /
+Artists / Titles. Each folder row shows its name and track count; the
+<code>⊕</code> button adds all tracks in that folder to the queue.
+Clicking the row drills down to the track detail view.</p>
+<hr />
+<h2 id="player-design">Player Design</h2>
+<h3 id="always-visible">Always visible</h3>
+<p>The now-playing panel is always rendered. When no track is loaded it
+shows an idle state:</p>
+<pre><code>(No track loaded)
+[⏮ disabled]  [▶ disabled]  [⏭ disabled]</code></pre>
+<p>The delete-record button is removed from the player entirely. Record
+deletion is a library management concern, not a playback concern.</p>
+<h3 id="context-display">Context display</h3>
+<p>When a track is loaded the player shows four lines:</p>
+<pre><code>Goldberg Variations: Aria                   ← track title
+Glenn Gould · Goldberg Variations           ← artist · album
+📁 1981-Goldberg-Variations                 ← containing folder name</code></pre>
+<p>The folder name is derived from the last directory component of
+<code>ContentURL</code>.</p>
+<hr />
+<h2 id="scan-sweep-progress">Scan / Sweep Progress</h2>
+<p>The scan and sweep status polling loops display elapsed time during
+the operation:</p>
+<pre><code>Scanning… (12s)
+Sweeping… (3s)</code></pre>
+<p>Elapsed time is computed from <code>started_at</code> returned in the
+async status response. On completion the status shows “Scan complete” or
+“N stale record(s) removed”.</p>
+</section>
+</body>
+</html>

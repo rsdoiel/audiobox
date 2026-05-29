@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en-US">
+<head>
+    <title>audiobox</title>
+    <link rel="stylesheet" href="/css/site.css">
+</head>
+<body>
+<nav>
+<ul>
+    <li><a href="/">Home</a></li>
+    <li><a href="index.html">README</a></li>
+    <li><a href="LICENSE">LICENSE</a></li>
+    <li><a href="INSTALL.html">INSTALL</a></li>
+    <li><a href="user_manual.html">User Manual</a></li>
+    <li><a href="about.html">About</a></li>
+    <!-- <li><a href="search.html">Search</a></li> -->
+    <li><a href="https://github.com/rsdoiel/audiobox">GitHub</a></li>
+</ul>
+</nav>
+<section>
+<h1 id="audiobox-implementation-plan">audiobox Implementation Plan</h1>
+<p>Tasks are grouped into phases. Each phase is self-contained and
+releasable. Within a phase, tasks are listed in dependency order —
+complete them top to bottom. File paths are relative to the repo
+root.</p>
+<hr />
+<h2 id="phase-1-frontend-ux-improvements">Phase 1 — Frontend UX
+improvements</h2>
+<p>All tasks in this phase touch only <code>audiobox_player.ts</code>.
+No Go changes. After each task run <code>deno task bundle</code> and
+smoke-test in the browser.</p>
+<h3 id="scan-sweep-elapsed-time-indicator">1.1 Scan / sweep elapsed-time
+indicator</h3>
+<p><strong>Goal:</strong> Show elapsed seconds during async operations
+instead of a static “Scanning…” message.</p>
+<p><strong>Files:</strong> <code>audiobox_player.ts</code></p>
+<p><strong>Changes:</strong> - In <code>_pollScan</code>: when
+<code>s.status === "running"</code>, compute
+<code>Math.floor((Date.now() - new Date(s.started_at).getTime()) / 1000)</code>
+and set <code>status.textContent = \</code>Scanning…
+(${elapsed}s)`<code>. - Same pattern in</code>_pollSweep<code>→</code>“Sweeping…
+(Ns)”`.</p>
+<hr />
+<h3 id="player-always-visible-remove-delete-button">1.2 Player always
+visible; remove delete button</h3>
+<p><strong>Goal:</strong> The now-playing panel is always rendered. The
+delete-record button is removed.</p>
+<p><strong>Files:</strong> <code>audiobox_player.ts</code></p>
+<p><strong>Changes:</strong> - Remove <code>.hidden</code> from
+<code>.now-playing</code> in <code>PLAYER_TEMPLATE</code>. - Remove
+<code>.delete-track-btn</code> element from
+<code>PLAYER_TEMPLATE</code>. - Remove <code>.delete-track-btn</code>
+CSS from <code>STYLES</code>. - Remove the delete-button
+<code>addEventListener</code> block from <code>_bindControls</code>. -
+Remove <code>deleteBtn.dataset.trackId = info.ID</code> from
+<code>_showNowPlaying</code>. - Add <code>_initPlayer()</code> method:
+sets title to “(No track loaded)”, clears sub and context, resets seek
+bar, calls <code>_refreshPlayState(false)</code>. - Call
+<code>_initPlayer()</code> from: - <code>connectedCallback</code> (after
+status check succeeds, before <code>_loadTab</code>) - Clear queue
+handler (task 1.4) - When the last queued track finishes (task 1.4)</p>
+<hr />
+<h3 id="player-context-folder-name">1.3 Player context: folder name</h3>
+<p><strong>Goal:</strong> Show the folder containing the current track
+below the artist/album line.</p>
+<p><strong>Files:</strong> <code>audiobox_player.ts</code></p>
+<p><strong>Changes:</strong> - In <code>_showNowPlaying</code>, derive
+folder name:
+<code>typescript   const parts = info.ContentURL.replace(/\\/g, "/").split("/");   const folder = parts.length &gt;= 2 ? parts[parts.length - 2] : "";</code>
+- Set <code>this.qs(".context-info").textContent = folder ? \</code>📁
+${folder}` :
+““<code>. - Remove the</code>contextLabel<code>/</code>”From: …“` logic
+(no longer needed once drill-down is implemented in task 1.6).</p>
+<hr />
+<h3
+id="queue-clear-button-per-item-remove-auto-remove-played-runtime-estimate">1.4
+Queue: clear button, per-item remove, auto-remove played, runtime
+estimate</h3>
+<p><strong>Goal:</strong> Full queue management and display
+improvements.</p>
+<p><strong>Files:</strong> <code>audiobox_player.ts</code></p>
+<p><strong>Changes:</strong></p>
+<p><strong>Template / styles:</strong> - Add
+<code>&lt;button class="clear-queue-btn" disabled&gt;Clear&lt;/button&gt;</code>
+to <code>.queue-actions</code> in <code>PLAYER_TEMPLATE</code>. - Change
+<code>.queue-item</code> to
+<code>display: flex; align-items: center; gap: 4px;</code> (removes
+<code>white-space: nowrap; overflow: hidden; text-overflow: ellipsis</code>
+from the row — those move to <code>.queue-item-name</code>). - Add
+<code>.queue-item-name { flex: 1; white-space: nowrap; overflow: hidden;   text-overflow: ellipsis; }</code>.
+- Add
+<code>.queue-remove-btn { flex-shrink: 0; padding: 0 4px; border: none;   background: transparent; color: #aaa; cursor: pointer; font-size: 14px; }</code>
+and <code>:hover { color: #e74c3c; }</code>.</p>
+<p><strong><code>_updateQueuePanel</code>:</strong> - Add
+<code>parseDurationSecs(iso: string): number</code> helper (parses
+PT…H…M…S). - Sum durations of all items:
+<code>totalSecs = queue.reduce(…)</code>. - Format total:
+<code>_fmtSecs(totalSecs)</code> — reuse existing helper. - Queue title:
+<code>Queue (${n} · ~${totalStr})</code> or <code>Queue (${n})</code>
+when no durations available. - Each <code>.queue-item</code> renders:
+<code>html   &lt;div class="queue-item" data-queue-index="i"&gt;     &lt;span class="queue-item-name"&gt;title&lt;/span&gt;     &lt;button class="queue-remove-btn" data-remove-index="i"&gt;×&lt;/button&gt;   &lt;/div&gt;</code>
+- Enable/disable <code>.clear-queue-btn</code> based on
+<code>queue.length &gt; 0</code>.</p>
+<p><strong>Bindings:</strong> - Wire <code>.clear-queue-btn</code>
+click:
+<code>queue = []; currentIndex = -1;   audioEl.pause(); audioEl.src = ""; _initPlayer(); _updateQueuePanel()</code>.
+- Wire <code>.queue-remove-btn</code> via delegation on
+<code>.queue-list</code>: splice item at index, adjust
+<code>currentIndex</code> if needed, call
+<code>_updateQueuePanel()</code>. If the removed item was currently
+playing, pause and call <code>_initPlayer()</code>.</p>
+<p><strong>Auto-remove on <code>ended</code> (in
+<code>_bindAudio</code>):</strong> - Replace current <code>ended</code>
+handler:
+<code>typescript   this.queue.splice(this.currentIndex, 1);   if (this.currentIndex &lt; this.queue.length) {     this._playIndex(this.currentIndex);   // next item shifted into place   } else {     this.currentIndex = -1;     this._refreshPlayState(false);     this._initPlayer();     this._updateQueuePanel();   }</code></p>
+<hr />
+<h3 id="queue-does-not-auto-play-when-items-are-added">1.5 Queue does
+not auto-play when items are added</h3>
+<p><strong>Goal:</strong> Adding items to the queue primes the player
+but does not start playback. The user presses ▶ to begin.</p>
+<p><strong>Files:</strong> <code>audiobox_player.ts</code></p>
+<p><strong>Changes:</strong> - In <code>_addToQueue</code>, when the
+queue was empty and <code>currentIndex &lt; 0</code>:
+<code>typescript   this.currentIndex = 0;   this.audioEl.src = this.api.audioUrl(this.queue[0].ID);   this._showNowPlaying(this.queue[0]);   this._refreshPlayState(false);   // do NOT call audioEl.play()</code>
+- Remove <code>autoPlay</code> parameter from
+<code>_renderAudioList</code> (or remove the method entirely — see task
+1.6).</p>
+<hr />
+<h3 id="browse-drill-down-search-shows-typed-results">1.6 Browse
+drill-down; search shows typed results</h3>
+<p><strong>Goal:</strong> Clicking a browse item opens a track detail
+view in the list panel without modifying the queue. Only explicit
+<code>⊕</code> actions add to the queue. Search results are shown in the
+same drill-down style.</p>
+<p><strong>Files:</strong> <code>audiobox_player.ts</code></p>
+<p><strong>New state fields:</strong></p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode typescript"><code class="sourceCode typescript"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">private</span> drilldownTracks<span class="op">:</span> AudioInfo[] <span class="op">=</span> []<span class="op">;</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="kw">private</span> drilldownLabel  <span class="op">=</span> <span class="st">&quot;&quot;</span><span class="op">;</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="kw">private</span> currentBrowseTab <span class="op">=</span> <span class="st">&quot;albums&quot;</span><span class="op">;</span></span></code></pre></div>
+<p><strong>New styles (add to <code>STYLES</code>):</strong></p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode css"><code class="sourceCode css"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">.drill-back-bar</span> {</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>  <span class="kw">display</span><span class="ch">:</span> <span class="dv">flex</span><span class="op">;</span> <span class="kw">align-items</span><span class="ch">:</span> <span class="dv">center</span><span class="op">;</span> <span class="kw">gap</span><span class="ch">:</span> <span class="dv">6</span><span class="dt">px</span><span class="op">;</span> <span class="kw">padding</span><span class="ch">:</span> <span class="dv">6</span><span class="dt">px</span> <span class="dv">8</span><span class="dt">px</span><span class="op">;</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>  <span class="kw">background</span><span class="ch">:</span> <span class="cn">#f0f0f0</span><span class="op">;</span> <span class="kw">border-bottom</span><span class="ch">:</span> <span class="dv">1</span><span class="dt">px</span> <span class="dv">solid</span> <span class="cn">#e0e0e0</span><span class="op">;</span> <span class="kw">font-size</span><span class="ch">:</span> <span class="dv">12</span><span class="dt">px</span><span class="op">;</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="fu">.drill-back-btn</span> {</span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>  <span class="kw">padding</span><span class="ch">:</span> <span class="dv">2</span><span class="dt">px</span> <span class="dv">8</span><span class="dt">px</span><span class="op">;</span> <span class="kw">border</span><span class="ch">:</span> <span class="dv">1</span><span class="dt">px</span> <span class="dv">solid</span> <span class="cn">#ccc</span><span class="op">;</span> <span class="kw">border-radius</span><span class="ch">:</span> <span class="dv">3</span><span class="dt">px</span><span class="op">;</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>  <span class="kw">background</span><span class="ch">:</span> <span class="cn">#fff</span><span class="op">;</span> <span class="kw">cursor</span><span class="ch">:</span> <span class="dv">pointer</span><span class="op">;</span> <span class="kw">font-size</span><span class="ch">:</span> <span class="dv">12</span><span class="dt">px</span><span class="op">;</span> <span class="kw">flex-shrink</span><span class="ch">:</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a><span class="fu">.drill-back-btn</span><span class="in">:hover</span> { <span class="kw">background</span><span class="ch">:</span> <span class="cn">#e8e8e8</span><span class="op">;</span> }</span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a><span class="fu">.drill-context-label</span> {</span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>  <span class="kw">flex</span><span class="ch">:</span> <span class="dv">1</span><span class="op">;</span> <span class="kw">overflow</span><span class="ch">:</span> <span class="dv">hidden</span><span class="op">;</span> <span class="kw">text-overflow</span><span class="ch">:</span> <span class="dv">ellipsis</span><span class="op">;</span> <span class="kw">white-space</span><span class="ch">:</span> <span class="dv">nowrap</span><span class="op">;</span> <span class="kw">color</span><span class="ch">:</span> <span class="cn">#555</span><span class="op">;</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a><span class="fu">.drill-add-all-btn</span> {</span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>  <span class="kw">padding</span><span class="ch">:</span> <span class="dv">2</span><span class="dt">px</span> <span class="dv">8</span><span class="dt">px</span><span class="op">;</span> <span class="kw">border</span><span class="ch">:</span> <span class="dv">1</span><span class="dt">px</span> <span class="dv">solid</span> <span class="cn">#4a90d9</span><span class="op">;</span> <span class="kw">border-radius</span><span class="ch">:</span> <span class="dv">3</span><span class="dt">px</span><span class="op">;</span></span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a>  <span class="kw">background</span><span class="ch">:</span> <span class="cn">#fff</span><span class="op">;</span> <span class="kw">color</span><span class="ch">:</span> <span class="cn">#1a73e8</span><span class="op">;</span> <span class="kw">cursor</span><span class="ch">:</span> <span class="dv">pointer</span><span class="op">;</span> <span class="kw">font-size</span><span class="ch">:</span> <span class="dv">12</span><span class="dt">px</span><span class="op">;</span> <span class="kw">flex-shrink</span><span class="ch">:</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a><span class="fu">.drill-add-all-btn</span><span class="in">:hover</span> { <span class="kw">background</span><span class="ch">:</span> <span class="cn">#e8f0fe</span><span class="op">;</span> }</span></code></pre></div>
+<p><strong>New <code>_showDrilldown(tracks, label)</code>
+method:</strong> - Stores tracks in <code>this.drilldownTracks</code>,
+label in <code>this.drilldownLabel</code>. - Renders the list panel with
+a back bar and one <code>.list-item</code> per track (title + sub-line +
+<code>⊕</code> button using <code>data-drilldown-index</code>). - Does
+NOT touch <code>this.queue</code>.</p>
+<p><strong>Updated list-panel click delegation
+(<code>_bindControls</code>):</strong> - <code>⊕</code> button with
+<code>data-add-tab</code> / <code>data-add-item</code> → unchanged
+(browse-level add). - <code>⊕</code> button with
+<code>data-drilldown-index</code> →
+<code>_addToQueue([drilldownTracks[i]])</code>. -
+<code>.drill-back-btn</code> → re-render current tab via
+<code>_loadTab(currentBrowseTab)</code>. -
+<code>.drill-add-all-btn</code> →
+<code>_addToQueue(drilldownTracks)</code>. - <code>.list-item</code>
+with <code>data-browse-tab</code> → call new
+<code>_drillDown(tab, item)</code> instead of
+<code>_renderAudioList</code>.</p>
+<p><strong><code>_drillDown(tab, item)</code> method:</strong></p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode typescript"><code class="sourceCode typescript"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="kw">private</span> <span class="fu">_drillDown</span>(tab<span class="op">:</span> <span class="dt">string</span><span class="op">,</span> item<span class="op">:</span> <span class="dt">string</span>)<span class="op">:</span> <span class="dt">void</span> {</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>  <span class="kw">this</span><span class="op">.</span><span class="fu">_setListContent</span>(<span class="st">&#39;&lt;div class=&quot;list-empty&quot;&gt;Loading…&lt;/div&gt;&#39;</span>)<span class="op">;</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> q <span class="op">=</span> <span class="fu">buildBrowseQuery</span>(tab<span class="op">,</span> item)<span class="op">;</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> label <span class="op">=</span> <span class="vs">`</span><span class="sc">${</span>tab<span class="sc">}</span><span class="vs">: </span><span class="sc">${</span>item<span class="sc">}</span><span class="vs">`</span><span class="op">;</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>  <span class="kw">this</span><span class="op">.</span><span class="at">api</span><span class="op">.</span><span class="fu">search</span>(q)</span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>    <span class="op">.</span><span class="fu">then</span>(tracks <span class="kw">=&gt;</span> <span class="kw">this</span><span class="op">.</span><span class="fu">_showDrilldown</span>(tracks<span class="op">,</span> label))</span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>    <span class="op">.</span><span class="fu">catch</span>(err  <span class="kw">=&gt;</span> <span class="kw">this</span><span class="op">.</span><span class="fu">_setListContent</span>(</span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>      <span class="vs">`&lt;div class=&quot;list-empty&quot;&gt;</span><span class="sc">${</span><span class="kw">this</span><span class="op">.</span><span class="fu">_escHtml</span>(<span class="bu">String</span>(err))<span class="sc">}</span><span class="vs">&lt;/div&gt;`</span>))<span class="op">;</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
+<p><strong><code>_runSearch</code> update:</strong> - Replace
+<code>_renderAudioList(results, …, false)</code> with
+<code>_showDrilldown(results, \</code>Search: ${q}`)`.</p>
+<p><strong>Remove <code>_renderAudioList</code></strong> (no longer used
+after this task).</p>
+<hr />
+<h2 id="phase-2-folders-tab">Phase 2 — Folders tab</h2>
+<p>Adds filesystem-level browsing to both backend and frontend.</p>
+<h3 id="backend-folderentry-type-and-getfolders-method">2.1 Backend:
+FolderEntry type and GetFolders method</h3>
+<p><strong>Files:</strong> <code>audiobox.go</code></p>
+<p><strong>Changes:</strong> - Add <code>FolderEntry</code> struct:
+<code>Path</code>, <code>Name</code> (deslugified last component),
+<code>TrackCount int</code>. - Add
+<code>GetFolders() ([]FolderEntry, error)</code>: query distinct
+<code>filepath.Dir(content_url)</code> from <code>audio_files</code>,
+count tracks per dir, deslugify the last component, sort by
+<code>Path</code>. - Add
+<code>GetFolderTracks(dir string) ([]AudioInfo, error)</code>: LIKE
+prefix query <code>content_url LIKE escapeLIKE(dir) + sep + "%"</code>,
+ordered by <code>disc_number,   track_number, name</code>.</p>
+<h3 id="backend-folder-api-endpoints">2.2 Backend: folder API
+endpoints</h3>
+<p><strong>Files:</strong> <code>server.go</code></p>
+<p><strong>Changes:</strong> - Register
+<code>GET /api/list/folders</code> → <code>handleListFolders</code>. -
+Register <code>GET /api/list/folder-tracks</code> →
+<code>handleListFolderTracks</code> (reads <code>?dir=</code> query
+param). - Update <code>apiHelpMarkdown</code> with the two new
+endpoints.</p>
+<h3 id="frontend-folderentry-type-and-api-methods">2.3 Frontend:
+FolderEntry type and API methods</h3>
+<p><strong>Files:</strong> <code>audiobox_api.ts</code></p>
+<p><strong>Changes:</strong> - Add <code>FolderEntry</code> interface:
+<code>{ path: string; name: string; trackCount: number }</code>. - Add
+<code>listFolders(): Promise&lt;FolderEntry[]&gt;</code> to
+<code>AudioInfoAPI</code>. - Add
+<code>listFolderTracks(dir: string): Promise&lt;AudioInfo[]&gt;</code>
+to <code>AudioInfoAPI</code>.</p>
+<h3 id="frontend-folders-tab">2.4 Frontend: Folders tab</h3>
+<p><strong>Files:</strong> <code>audiobox_player.ts</code></p>
+<p><strong>Changes:</strong> - Add
+<code>&lt;button class="tab" data-tab="folders"&gt;Folders&lt;/button&gt;</code>
+to tabs in <code>PLAYER_TEMPLATE</code>. - In
+<code>_loadTab("folders")</code>: call <code>api.listFolders()</code>,
+render folder list. Each row shows <code>name</code> +
+<code>(N tracks)</code> sub-line and a <code>⊕</code> button (uses
+<code>data-add-tab="folders" data-add-item="encodedPath"</code>). -
+Browse click on a folder row (<code>data-browse-tab="folders"</code>)
+calls <code>_drillDownFolder(path)</code> which calls
+<code>api.listFolderTracks(path)</code> then
+<code>_showDrilldown(tracks, label)</code>. - Update
+<code>buildBrowseQuery</code> to handle <code>"folders"</code> tab (or
+handle it separately since folder lookup uses path, not a search
+query).</p>
+<hr />
+<h2 id="phase-3-search-improvements">Phase 3 — Search improvements</h2>
+<p>Typed, grouped search results with per-result queue controls.</p>
+<h3 id="grouped-search-ui">3.1 Grouped search UI</h3>
+<p><strong>Files:</strong> <code>audiobox_player.ts</code></p>
+<p><strong>Changes:</strong> - Add <code>_runGroupedSearch(q)</code>
+method: issues four parallel API calls (<code>album:"q"</code>,
+<code>artist:"q"</code>, <code>title:"q"</code>, plain <code>q</code>)
+via <code>Promise.all</code>. - Deduplicates results across groups by
+<code>ID</code>. - Renders grouped sections in the list panel (Albums,
+Artists, Titles, Tracks) each with a <code>⊕ Add All</code> header
+button and per-item <code>⊕</code> / <code>⊖</code> buttons. -
+<code>⊖</code> removes tracks matching that item from
+<code>this.queue</code>. - Replace <code>_runSearch</code> with
+<code>_runGroupedSearch</code> in the search-button binding. - Folder
+name matching done client-side against the last-loaded folder list (if
+available); folder section appears when folder names match
+<code>q</code>.</p>
+<hr />
+<h2 id="phase-4-network-sharing">Phase 4 — Network sharing</h2>
+<h3 id="config-shareaddress-field">4.1 Config: shareAddress field</h3>
+<p><strong>Files:</strong> <code>config.go</code></p>
+<p><strong>Changes:</strong> - Add
+<code>ShareAddress string \</code>yaml:“shareAddress,omitempty”`<code>to</code>CollectionConfig`.</p>
+<h3 id="backend-listener-manager">4.2 Backend: listener manager</h3>
+<p><strong>Files:</strong> <code>server.go</code></p>
+<p><strong>Changes:</strong> - Add <code>shareState</code> struct:
+<code>mu sync.RWMutex</code>, <code>sharing bool</code>,
+<code>shareAddress string</code>. - Add <code>listenerManager</code>
+struct and <code>run()</code> goroutine (see DESIGN.md). - Refactor
+<code>Serve()</code> to use <code>listenerManager</code>: start with
+<code>127.0.0.1:port</code> (or <code>0.0.0.0:port</code> when
+<code>shareMode</code> is true at startup). - Add
+<code>remoteAccessMiddleware</code>: check <code>r.RemoteAddr</code>;
+non-loopback + non-GET/HEAD → 403. - Handle global
+<code>shutdownCh</code> to stop the listener manager cleanly.</p>
+<h3 id="backend-share-api-endpoints">4.3 Backend: share API
+endpoints</h3>
+<p><strong>Files:</strong> <code>server.go</code></p>
+<p><strong>Changes:</strong> - <code>GET /api/share/status</code> →
+<code>handleShareStatus</code>. - <code>GET /api/share/addresses</code>
+→ <code>handleShareAddresses</code> (enumerate non-loopback IPv4 via
+<code>net.InterfaceAddrs()</code>). - <code>POST /api/share/on</code> →
+<code>handleShareOn</code>: parse <code>{"address":"…"}</code>, respond
+immediately with <code>{"status":"restarting","poll_url":"…"}</code>,
+then async restart listener on <code>0.0.0.0:port</code>, save address
+to config. - <code>POST /api/share/off</code> →
+<code>handleShareOff</code>: respond then async restart on
+<code>127.0.0.1:port</code>. - Update <code>apiHelpMarkdown</code>.</p>
+<h3 id="cli-audiobox-server-share-ip">4.4 CLI:
+<code>audiobox server share [IP]</code></h3>
+<p><strong>Files:</strong> <code>cmd/audiobox/main.go</code></p>
+<p><strong>Changes:</strong> - In the <code>"server"</code> case, check
+<code>args[0] == "share"</code> after loading the collection. - If
+<code>args[1]</code> is present: validate it as an IPv4 address, save to
+config, start with share mode. - If no <code>args[1]</code>: read
+<code>cfg.ShareAddress</code>; exit with error if empty. - Update
+<code>handleServer</code> signature or add
+<code>handleServerShare(col, addr)</code>. - Update
+<code>helpServer</code> text.</p>
+<h3 id="frontend-share-api-types-and-methods">4.5 Frontend: share API
+types and methods</h3>
+<p><strong>Files:</strong> <code>audiobox_api.ts</code></p>
+<p><strong>Changes:</strong> - Add <code>ShareStatus</code> interface:
+<code>{ sharing: bool; share_address: string;   share_url: string }</code>.
+- Add <code>shareStatus()</code>, <code>shareAddresses()</code>,
+<code>shareOn(address)</code>, <code>shareOff()</code> to
+<code>AudioInfoAPI</code>.</p>
+<h3 id="frontend-share-ui-in-library-panel">4.6 Frontend: share UI in
+library panel</h3>
+<p><strong>Files:</strong> <code>audiobox_player.ts</code></p>
+<p><strong>Changes:</strong> - Add share row to Library panel in
+<code>PLAYER_TEMPLATE</code>:
+<code>html   &lt;div class="library-row"&gt;     &lt;button class="lib-btn share-btn"&gt;Share&lt;/button&gt;     &lt;span class="lib-status share-status"&gt;&lt;/span&gt;   &lt;/div&gt;</code>
+- <code>_initShareStatus()</code>: calls <code>api.shareStatus()</code>
+on startup; if sharing, shows current share URL. -
+<code>_bindControls</code>: wire <code>.share-btn</code> click → 1. Call
+<code>api.shareAddresses()</code>. 2. Show inline picker (or simple
+prompt if only one address). 3. Call <code>api.shareOn(address)</code>.
+4. Poll <code>api.shareStatus()</code> until
+<code>sharing === true</code>. 5. Update share-status span with URL +
+Copy button + Disable button. - Disable button →
+<code>api.shareOff()</code> → poll until <code>sharing === false</code>
+→ reset share-status span. - Copy button →
+<code>navigator.clipboard.writeText(shareUrl)</code>.</p>
+<hr />
+<h2 id="phase-5-playlists">Phase 5 — Playlists</h2>
+<h3 id="backend-schema-migration">5.1 Backend: schema migration</h3>
+<p><strong>Files:</strong> <code>config.go</code> (inside
+<code>initSchema</code>)</p>
+<p><strong>Changes:</strong> - Add
+<code>CREATE TABLE IF NOT EXISTS playlists (…)</code>. - Add
+<code>CREATE TABLE IF NOT EXISTS playlist_tracks (…)</code>. - (Schema
+defined in DESIGN.md.)</p>
+<h3 id="backend-playlist-crud-methods">5.2 Backend: playlist CRUD
+methods</h3>
+<p><strong>Files:</strong> <code>audiobox.go</code></p>
+<p><strong>Changes:</strong> - Add <code>PlaylistInfo</code> struct:
+<code>ID</code>, <code>Name</code>, <code>TrackCount</code>,
+<code>Created</code>. - Add
+<code>SavePlaylist(name string, trackIDs []string) (string, error)</code>.
+- Add <code>GetPlaylists() ([]PlaylistInfo, error)</code>. - Add
+<code>LoadPlaylist(id string) ([]AudioInfo, error)</code>. - Add
+<code>DeletePlaylist(id string) error</code>.</p>
+<h3 id="backend-playlist-api-endpoints">5.3 Backend: playlist API
+endpoints</h3>
+<p><strong>Files:</strong> <code>server.go</code></p>
+<p><strong>Changes:</strong> - <code>GET    /api/playlists</code> →
+<code>handleListPlaylists</code> - <code>POST   /api/playlists</code> →
+<code>handleSavePlaylist</code> (blocked read-only) -
+<code>GET    /api/playlists/{id}</code> →
+<code>handleLoadPlaylist</code> -
+<code>DELETE /api/playlists/{id}</code> →
+<code>handleDeletePlaylist</code> (blocked read-only) - Update
+<code>apiHelpMarkdown</code>.</p>
+<h3 id="frontend-playlist-api-types-and-methods">5.4 Frontend: playlist
+API types and methods</h3>
+<p><strong>Files:</strong> <code>audiobox_api.ts</code></p>
+<p><strong>Changes:</strong> - Add <code>PlaylistInfo</code> interface:
+<code>{ id, name, trackCount, created }</code>. - Add
+<code>listPlaylists()</code>, <code>savePlaylist(name, trackIds)</code>,
+<code>loadPlaylist(id)</code>, <code>deletePlaylist(id)</code> to
+<code>AudioInfoAPI</code>.</p>
+<h3 id="frontend-save-queue-as-playlist">5.5 Frontend: save queue as
+playlist</h3>
+<p><strong>Files:</strong> <code>audiobox_player.ts</code></p>
+<p><strong>Changes:</strong> - Add
+<code>&lt;button class="save-playlist-btn" disabled&gt;Save as Playlist&lt;/button&gt;</code>
+to <code>.queue-actions</code> in <code>PLAYER_TEMPLATE</code>. - Enable
+when <code>queue.length &gt; 0</code>. - On click: prompt for playlist
+name (simple <code>window.prompt</code> or inline input in queue
+header); call
+<code>api.savePlaylist(name, queue.map(t =&gt; t.ID))</code>. - Show
+brief confirmation in queue title area.</p>
+<h3 id="frontend-playlists-browse-section">5.6 Frontend: playlists
+browse section</h3>
+<p><strong>Files:</strong> <code>audiobox_player.ts</code></p>
+<p><strong>Changes:</strong> - Add a
+<code>&lt;button class="tab" data-tab="playlists"&gt;Playlists&lt;/button&gt;</code>
+tab (or a section in the Library panel — TBD based on space). -
+<code>_loadTab("playlists")</code>: calls
+<code>api.listPlaylists()</code>, renders list. Each row shows playlist
+name + track count, with a <code>▶ Load</code> button and a
+<code>✕ Delete</code> button. - <code>▶ Load</code> →
+<code>api.loadPlaylist(id)</code> → <code>_addToQueue(tracks)</code>. -
+<code>✕ Delete</code> → confirm → <code>api.deletePlaylist(id)</code> →
+refresh list.</p>
+<hr />
+<h2 id="rebuild-step-after-any-typescript-change">Rebuild step (after
+any TypeScript change)</h2>
+<div class="sourceCode" id="cb4"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> ~/Laboratory/audiobox</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="ex">deno</span> task bundle</span></code></pre></div>
+<p>The bundle command is:
+<code>deno bundle --platform browser audiobox_player.ts -o htdocs/module/audiobox.js</code></p>
+<h2 id="build-and-test-after-any-go-change">Build and test (after any Go
+change)</h2>
+<div class="sourceCode" id="cb5"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> ~/Laboratory/audiobox</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="ex">go</span> test ./...</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> build</span></code></pre></div>
+</section>
+</body>
+</html>
