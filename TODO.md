@@ -8,6 +8,8 @@
 
 ## Next
 
+- [ ] Use an OPML file to import/export playlists
+- [ ] Revise shuffle constraints, if an audio file is playing it and a user press shuffle for the queue it doesn't change that it is playing or the onces that have played. If no audio is playing and I press shuffle for the queue then the whole queue is shuffled and the selected audio file is set to the new top of list.
 - [ ] There needs to a way to explude specific folders from a playlist. 
 - [ ] Adding content to the queue is done by pressing the "+" (add to queue) button only
 - [ ] There should be a switch or action to allow audiobox to be reachable via HTTP from machines on the same network (share audio button)
