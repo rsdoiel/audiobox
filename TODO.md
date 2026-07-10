@@ -3,11 +3,20 @@
 
 ## Bugs
 
+- [ ] When searching for an artist need to able to queue albums in additional to individual songs
+- [ ] When picking the Artist button, the albums for an artist should be shown first when drilling down to see what the Artist is associated with, albums should have the plus button tto add a whole album to queue
+- [ ] When I add the "Travel" album to a playlist is pickups more than Jake Shimabukuro's "Travel" it also adds ZBS's "Travels with Jack"
+- [ ] When I search for Jake or Shimabukuro I am only getting back one of his albums, even when the "Artist" button was previously selected
+- [ ] When I type in an artist name under the Albums list, it should return a list of albums by the Artest name, do I need to have query prefix like "artist:Shimabukuro" to do that?
 - [ ] The scan action has no visual indicator that is had completed, a progress indicator would be nice to include
 - [ ] The sweep action has no visual indicator that it has completed, a progress indicator would be nice to include
 
 ## Next
 
+- [ ] It would be nice to build playlists based on artist name, date of first release (example 1965 to 1975 music)
+- [ ] There needs to be a means of importing and exporting a playlist as OPML files
+- [ ] An A-Z list jump option or filter needs to be available for Albums, Artists and Titles
+- [ ] Sort order for Albums and Titles should use the librarian style ordering where words like "the" and "a" are ignored but still shown in the result, "The Dave Mathews Band" would be sorted as "Dave Mathews Band, The" so it shows up in the "D" list not "T" list
 - [ ] Use an OPML file to import/export playlists
 - [ ] Revise shuffle constraints, if an audio file is playing it and a user press shuffle for the queue it doesn't change that it is playing or the onces that have played. If no audio is playing and I press shuffle for the queue then the whole queue is shuffled and the selected audio file is set to the new top of list.
 - [ ] There needs to a way to explude specific folders from a playlist. 
