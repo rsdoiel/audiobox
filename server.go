@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -139,6 +140,7 @@ func (c *Collection) Serve(logger *log.Logger) error {
 	mux.HandleFunc("GET /api/list/folders", c.handleListFolders(logger))
 	mux.HandleFunc("GET /api/list/folder-tracks", c.handleListFolderTracks(logger))
 	mux.HandleFunc("GET /api/list/album-tracks", c.handleListAlbumTracks(logger))
+	mux.HandleFunc("GET /api/tracks", c.handleQueryTracks(logger))
 	mux.HandleFunc("GET /api/search", c.handleSearch(logger))
 	mux.HandleFunc("GET /api/show/{id}", c.handleShow(logger))
 	mux.HandleFunc("DELETE /api/show/{id}", c.handleDelete(logger))
@@ -363,6 +365,39 @@ func (c *Collection) handleListAlbumTracks(logger *log.Logger) http.HandlerFunc 
 		tracks, err := c.GetTracksByAlbumDir(dir)
 		if err != nil {
 			logger.Printf("list album-tracks %q: %v", dir, err)
+			writeJSONError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, tracks)
+	}
+}
+
+func (c *Collection) handleQueryTracks(logger *log.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		opts := TrackQueryOptions{
+			Artist:         q.Get("artist"),
+			ExcludeFolders: parseExcludeFolders(r),
+		}
+		if v := q.Get("yearFrom"); v != "" {
+			y, err := strconv.Atoi(v)
+			if err != nil {
+				writeJSONError(w, http.StatusBadRequest, "yearFrom must be an integer")
+				return
+			}
+			opts.YearFrom = y
+		}
+		if v := q.Get("yearTo"); v != "" {
+			y, err := strconv.Atoi(v)
+			if err != nil {
+				writeJSONError(w, http.StatusBadRequest, "yearTo must be an integer")
+				return
+			}
+			opts.YearTo = y
+		}
+		tracks, err := c.QueryTracks(opts)
+		if err != nil {
+			logger.Printf("query tracks: %v", err)
 			writeJSONError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
@@ -874,6 +909,21 @@ folder-tracks and album-tracks each return a JSON array of AudioInfo objects, re
 directory rather than by tag — use these (not a field-scoped search) when the caller already
 knows the exact directory, e.g. from a prior list/albums or list/folders response, so that
 tag/directory-name mismatches or ambiguous tags never mix tracks from a different release.
+
+## Build a playlist from criteria
+
+` + "```" + `
+GET /api/tracks?artist=NAME&yearFrom=YYYY&yearTo=YYYY&exclude=folder1,folder2
+` + "```" + `
+
+Returns a JSON array of AudioInfo objects matching all given filters (all optional; no
+filters returns every track). artist is a case-insensitive substring match against any
+artist name on the track. yearFrom/yearTo bound DatePublished's leading year (inclusive);
+when either is set, tracks with no parseable year are excluded. exclude is the same
+comma-separated folder-path list used by the list endpoints' exclude parameter, applied
+here as a one-off filter for this query — independent of any persisted folder exclusion.
+Results are sorted by date published, then artist, then album, then track order — meant to
+be added to the queue and saved as a playlist via the existing playlist endpoints.
 
 ## Search
 

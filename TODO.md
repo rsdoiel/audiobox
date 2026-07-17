@@ -73,33 +73,33 @@ audiobox: warning: could not read tags from /Users/rsdoiel/Audio/Music/Albums/Pe
 
 ## Next
 
-- [ ] It would be nice to build playlists based on artist name, date of first release (example 1965 to 1975 music)
+- [x] It would be nice to build playlists based on artist name, date of first release (example 1965 to 1975 music) — "Build Playlist…" button in the Library panel: prompts for an artist-name substring and/or a release-year range, queries GET /api/tracks (QueryTracks in track_query.go), and adds every match to the queue so it can be reviewed/reordered/shuffled and saved as a playlist via the existing Save as Playlist button. This is a one-time build from criteria, not a persistent/dynamic "smart playlist" that re-evaluates later — say the word if you want that instead.
 - [x] There needs to be a means of importing and exporting a playlist as OPML files — GET /api/playlists/{id}/opml downloads a playlist as OPML 2.0; POST /api/playlists/import-opml uploads one and creates a new playlist. Each track becomes one &lt;outline&gt; (text=title, url=content_url, category=artist, description=album); import matches outlines back to tracks by content_url and reports imported/skipped counts for entries that no longer match a file in this collection. Web UI: "Export" (⇩) link per playlist row, "Import Playlist (OPML)" button in the Library panel. Uses github.com/rsdoiel/opml.
 - [x] An A-Z list jump option or filter needs to be available for Albums, Artists and Titles — a jump bar (A-Z + "#") now appears above the list on the Albums/Artists/Titles tabs; clicking a letter scrolls to the first matching row. Letters with no matches in the current list render disabled. Applies after Albums-tab artist/album filtering too, since it's derived from whatever is currently rendered.
 - [x] Sort order for Albums and Titles should use the librarian style ordering where words like "the" and "a" are ignored but still shown in the result, "The Dave Mathews Band" would be sorted as "Dave Mathews Band, The" so it shows up in the "D" list not "T" list — GetAlbumEntries/GetArtists/GetTitles now sort by a librarian key that ignores a leading standalone "The"/"A"/"An" (librarianSortKey in librarian_sort.go), so "The Dave Matthews Band" files under "D". Design note: the *displayed* name is left exactly as-is ("The Dave Matthews Band"), not rearranged to "Dave Matthews Band, The" — only the sort/jump-bar position changes. Say the word if you want the display text itself rearranged too; the sort-key plumbing is already there to build on.
 - [x] Use an OPML file to import/export playlists — duplicate of the bullet above; see there.
 - [x] Revise shuffle constraints, if an audio file is playing it and a user press shuffle for the queue it doesn't change that it is playing or the onces that have played. If no audio is playing and I press shuffle for the queue then the whole queue is shuffled and the selected audio file is set to the new top of list. — the "currently playing/already played never move" half already worked; fixed the other half: when nothing is currently selected (currentIndex -1, e.g. after removing the playing track), the whole queue now shuffles and the new top track is primed as selected (now-playing shown, audio loaded) without auto-playing, same as adding to an empty queue. Extracted as a pure, unit-tested shuffleQueue() function in audiobox_player.ts.
-- [ ] There needs to a way to explude specific folders from a playlist. 
-- [ ] Adding content to the queue is done by pressing the "+" (add to queue) button only
+- [x] There needs to a way to explude specific folders from a playlist. — same "Build Playlist…" flow above accepts a one-off, comma-separated exclude-folders list distinct from (and unaffected by) the persistent Folders-tab browse-exclude toggle.
+- [x] Adding content to the queue is done by pressing the "+" (add to queue) button only — already true: clicking a browse row drills down/shows details only, it never adds to the queue; only the "+"/"⊕" controls do. Verified by code inspection, no change needed.
 - [x] There should be a switch or action to allow audiobox to be reachable via HTTP from machines on the same network (share audio button) — already implemented: Share button in the Library panel, POST /api/share/on|off, GET /api/share/status|addresses; remote non-loopback clients are read-only (POST/PUT/DELETE blocked). Verified by code inspection, no change needed.
 - [x] Add a Folders list (with include/exclude options) in additional to albums, artists and titles — already implemented: Folders tab (GetFolders/GetFolderTracks) with a per-folder ON/OFF exclude toggle at every depth (see buildFolderTree); excluded folders are filtered out of the Albums/Artists/Titles tabs via excludeFolders. Verified by code inspection, no change needed.
   - This would solve the holiday music problem for when it is not the holiday season
-- [ ] Player improvements
-  - [ ] The player should always be visible
-  - [ ] Remove the "delete" button from the player
-  - [ ] The player should show the folder, album (if available ), artitle (if available) and title (if available) of the audio file to be played
-- [ ] Search Improvments
-  - [ ] searching needs to work for taking you to either the folder list, album list, artist and title depending on matching results.
-  - [ ] matching search results to include folders that match, album, artist and title (and indicate what type of match it is)
-    - [ ] each matched result should have "+" button for adding that content to the queue and "-" button to remove the matching content from the queue
-    - [ ] The individual title or album should have the "+" button to add to the queue
-- [ ] Queue improvements
-  - [ ] Add a clear button for the queue
-  - [ ] For individual items in the queue there can be a "-" (remove from queue) button
-  - [ ] As items finish being played from the queue they should be removed from it
-  - [ ] The queue doesn't auto-play, first item should be ready in the player but the player doesn't start until the play button is pressed
-  - [ ] I should be able to do a shuffle on the queue after getting the content I want to play into it
-  - [ ] The queue should indicate an estimate of run time for entries
-  - [ ] You should be able to save the queue as a playlist
-  - [ ] A playload should be loadable into the queue
+- [x] Player improvements — all three already implemented; verified by code inspection, no change needed.
+  - [x] The player should always be visible — the now-playing panel is unconditionally rendered (no hide/collapse state); covered by a template test.
+  - [x] Remove the "delete" button from the player — there is no delete button anywhere in the player/now-playing controls; nothing to remove.
+  - [x] The player should show the folder, album (if available ), artitle (if available) and title (if available) of the audio file to be played — _showNowPlaying sets title, "artist — album", and "📁 folder" from the track's ContentURL.
+- [x] Search Improvments — substantially implemented via the grouped search view; one nuance below. Verified by code inspection, no change needed.
+  - [x] searching needs to work for taking you to either the folder list, album list, artist and title depending on matching results. — implemented differently than literally described: instead of switching the active tab, a single search shows all matching groups (Albums/Artists/Titles/Tracks/Folders) at once, which surfaces the same information without forcing a choice. Say the word if you actually want tab-switching behavior instead.
+  - [x] matching search results to include folders that match, album, artist and title (and indicate what type of match it is) — _runGroupedSearch groups results under labeled headers (Albums/Artists/Titles/Tracks/Folders), including a dedicated folder-match group.
+    - [x] each matched result should have "+" button for adding that content to the queue and "-" button to remove the matching content from the queue — every track row in a search group has both row-add-btn (⊕) and row-remove-btn (⊖); each group header also has an "Add All" button.
+    - [x] The individual title or album should have the "+" button to add to the queue — same as above; Albums/Titles groups included.
+- [x] Queue improvements — all seven already implemented; verified by code inspection, no change needed.
+  - [x] Add a clear button for the queue — .clear-queue-btn.
+  - [x] For individual items in the queue there can be a "-" (remove from queue) button — .queue-remove-btn (×) per queue row.
+  - [x] As items finish being played from the queue they should be removed from it — the "ended" handler splices the finished track out of the queue and auto-advances.
+  - [x] The queue doesn't auto-play, first item should be ready in the player but the player doesn't start until the play button is pressed — _addToQueue/_shuffleQueue prime the first/new-top track (src loaded, shown as now-playing) via _refreshPlayState(false), never auto-playing.
+  - [x] I should be able to do a shuffle on the queue after getting the content I want to play into it — .shuffle-btn, fixed this session (see the shuffle-constraints bullet above).
+  - [x] The queue should indicate an estimate of run time for entries — queue title shows "Queue (N · ~H:MM:SS)", summed from each track's duration.
+  - [x] You should be able to save the queue as a playlist — .save-playlist-btn.
+  - [x] A playload should be loadable into the queue — playlist row's ▶ button loads a saved playlist into the queue.
 

@@ -88,6 +88,59 @@ Deno.test("listAlbumTracks - returns AudioInfo array", async () => {
   }
 });
 
+Deno.test("queryTracks - no filters requests /api/tracks with no query string", async () => {
+  let capturedUrl = "";
+  globalThis.fetch = (input: RequestInfo | URL) => {
+    capturedUrl = String(input);
+    return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+  };
+  try {
+    const api = new AudioInfoAPI("http://localhost:8010");
+    await api.queryTracks({});
+    assertEquals(capturedUrl, "http://localhost:8010/api/tracks");
+  } finally {
+    restoreFetch();
+  }
+});
+
+Deno.test("queryTracks - encodes artist, year range, and exclude folders", async () => {
+  let capturedUrl = "";
+  globalThis.fetch = (input: RequestInfo | URL) => {
+    capturedUrl = String(input);
+    return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+  };
+  try {
+    const api = new AudioInfoAPI("http://localhost:8010");
+    await api.queryTracks({
+      artist: "eagles",
+      yearFrom: 1965,
+      yearTo: 1975,
+      excludeFolders: ["Holiday Music", "Skip"],
+    });
+    const url = new URL(capturedUrl);
+    assertEquals(url.pathname, "/api/tracks");
+    assertEquals(url.searchParams.get("artist"), "eagles");
+    assertEquals(url.searchParams.get("yearFrom"), "1965");
+    assertEquals(url.searchParams.get("yearTo"), "1975");
+    assertEquals(url.searchParams.get("exclude"), "Holiday Music,Skip");
+  } finally {
+    restoreFetch();
+  }
+});
+
+Deno.test("queryTracks - returns AudioInfo array", async () => {
+  const fixture = [{ ID: "abc", Name: "Hotel California" }];
+  mockFetch(fixture);
+  try {
+    const api = new AudioInfoAPI();
+    const results = await api.queryTracks({ artist: "eagles" });
+    assertEquals(results.length, 1);
+    assertEquals(results[0].Name, "Hotel California");
+  } finally {
+    restoreFetch();
+  }
+});
+
 Deno.test("search - encodes query in URL", async () => {
   let capturedUrl = "";
   globalThis.fetch = (input: RequestInfo | URL) => {

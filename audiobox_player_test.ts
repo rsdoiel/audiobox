@@ -457,3 +457,14 @@ Deno.test("PLAYER_TEMPLATE - has an OPML playlist import control (hidden file in
   assertEquals(input?.getAttribute("type"), "file");
   assertEquals(input?.hasAttribute("hidden"), true);
 });
+
+Deno.test("PLAYER_TEMPLATE - has a Build Playlist control", () => {
+  const doc = new DOMParser().parseFromString(
+    `<html><body>${PLAYER_TEMPLATE}</body></html>`,
+    "text/html",
+  )!;
+  const btn = doc.querySelector(".build-playlist-btn");
+  const status = doc.querySelector(".build-playlist-status");
+  assertEquals(btn !== null, true);
+  assertEquals(status !== null, true);
+});

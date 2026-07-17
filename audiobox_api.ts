@@ -272,6 +272,40 @@ export class AudioInfoAPI {
     return this.getJSON<AudioInfo[]>(`/api/list/album-tracks?dir=${encodeURIComponent(dir)}`);
   }
 
+  /** queryTracks returns tracks matching the given criteria — used to build
+   * a playlist from criteria (artist name, release year range) rather than
+   * by manually browsing and queuing tracks one by one. Every field is
+   * optional; no filters returns every track.
+   *
+   * Parameters:
+   *   opts.artist         (string, optional)   — case-insensitive substring match against any artist name
+   *   opts.yearFrom       (number, optional)   — inclusive lower bound on release year
+   *   opts.yearTo         (number, optional)   — inclusive upper bound on release year
+   *   opts.excludeFolders (string[], optional) — folder paths to exclude, one-off for this query
+   *
+   * Returns:
+   *   Promise<AudioInfo[]> — matching tracks, sorted by date/artist/album/track order
+   *
+   * Example:
+   *   const tracks = await api.queryTracks({ artist: "eagles", yearFrom: 1965, yearTo: 1975 });
+   */
+  async queryTracks(opts: {
+    artist?: string;
+    yearFrom?: number;
+    yearTo?: number;
+    excludeFolders?: string[];
+  }): Promise<AudioInfo[]> {
+    const params = new URLSearchParams();
+    if (opts.artist) params.set("artist", opts.artist);
+    if (opts.yearFrom) params.set("yearFrom", String(opts.yearFrom));
+    if (opts.yearTo) params.set("yearTo", String(opts.yearTo));
+    if (opts.excludeFolders && opts.excludeFolders.length > 0) {
+      params.set("exclude", opts.excludeFolders.join(","));
+    }
+    const qs = params.toString();
+    return this.getJSON<AudioInfo[]>(`/api/tracks${qs ? `?${qs}` : ""}`);
+  }
+
   /** search queries the collection by title, album, or artist.
    *
    * Parameters:

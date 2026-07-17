@@ -643,6 +643,10 @@ export const PLAYER_TEMPLATE = `
       <input type="file" class="opml-file-input" accept=".opml,.xml,text/x-opml+xml,application/xml" hidden />
       <span class="lib-status opml-import-status"></span>
     </div>
+    <div class="library-row">
+      <button class="lib-btn build-playlist-btn">Build Playlist…</button>
+      <span class="lib-status build-playlist-status"></span>
+    </div>
   </div>
 </div>
 `;
@@ -1652,6 +1656,10 @@ export class AudioInfoPlayer extends _Base {
     this.qs(".import-opml-btn").addEventListener("click", () => opmlFileInput.click());
     opmlFileInput.addEventListener("change", () => this._importPlaylistOPML(opmlFileInput, opmlStatus));
 
+    // Build Playlist… — prompts for criteria, queues matching tracks.
+    const buildStatus = this.qs<HTMLElement>(".build-playlist-status");
+    this.qs(".build-playlist-btn").addEventListener("click", () => this._buildPlaylistFromCriteria(buildStatus));
+
     // Shutdown
     this.qs(".shutdown-btn").addEventListener("click", () => this._requestShutdown());
   }
@@ -1988,6 +1996,69 @@ export class AudioInfoPlayer extends _Base {
       status.textContent = `Imported "${result.name}": ${result.imported} track${result.imported !== 1 ? "s" : ""}` +
         (result.skipped > 0 ? `, ${result.skipped} not found` : "");
       if (this.currentBrowseTab === "playlists") this._loadTab("playlists");
+    } catch (e) {
+      status.className = "lib-status error";
+      status.textContent = String(e);
+    }
+  }
+
+  /** _buildPlaylistFromCriteria prompts for artist/year-range/exclude-folder
+   * criteria, queries matching tracks, and adds them to the queue so they
+   * can be reviewed, reordered, or shuffled before using the existing Save
+   * as Playlist button. The exclude-folders criterion here is a one-off
+   * list for this build only — separate from, and unaffected by, the
+   * persistent Folders-tab browse-exclude toggle.
+   */
+  private async _buildPlaylistFromCriteria(status: HTMLElement): Promise<void> {
+    const artist = prompt("Artist name contains (leave blank for any):");
+    if (artist === null) return;
+    const yearFromStr = prompt("From year, e.g. 1965 (leave blank for no lower bound):");
+    if (yearFromStr === null) return;
+    const yearToStr = prompt("To year, e.g. 1975 (leave blank for no upper bound):");
+    if (yearToStr === null) return;
+    const excludeStr = prompt("Exclude folders — comma-separated paths (leave blank for none):");
+    if (excludeStr === null) return;
+
+    const trimmedArtist = artist.trim();
+    const excludeFolders = excludeStr.split(",").map((s) => s.trim()).filter(Boolean);
+
+    if (!trimmedArtist && !yearFromStr.trim() && !yearToStr.trim() && excludeFolders.length === 0) {
+      status.className = "lib-status error";
+      status.textContent = "No criteria given — nothing added.";
+      return;
+    }
+
+    const parseYear = (s: string): number | undefined => {
+      const t = s.trim();
+      if (!t) return undefined;
+      const n = parseInt(t, 10);
+      return isNaN(n) ? undefined : n;
+    };
+    const yearFrom = parseYear(yearFromStr);
+    const yearTo = parseYear(yearToStr);
+    if ((yearFromStr.trim() && yearFrom === undefined) || (yearToStr.trim() && yearTo === undefined)) {
+      status.className = "lib-status error";
+      status.textContent = "Year must be a number.";
+      return;
+    }
+
+    status.className = "lib-status";
+    status.textContent = "Building…";
+    try {
+      const tracks = await this.api.queryTracks({
+        artist: trimmedArtist || undefined,
+        yearFrom,
+        yearTo,
+        excludeFolders,
+      });
+      if (tracks.length === 0) {
+        status.className = "lib-status";
+        status.textContent = "No matching tracks found.";
+        return;
+      }
+      this._addToQueue(tracks);
+      status.className = "lib-status ok";
+      status.textContent = `Added ${tracks.length} track${tracks.length !== 1 ? "s" : ""} to the queue.`;
     } catch (e) {
       status.className = "lib-status error";
       status.textContent = String(e);
