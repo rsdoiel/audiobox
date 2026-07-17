@@ -55,6 +55,39 @@ Deno.test("listTitles - returns string array", async () => {
   }
 });
 
+Deno.test("listAlbumTracks - requests the exact album-tracks endpoint by dir, not search", async () => {
+  let capturedUrl = "";
+  globalThis.fetch = (input: RequestInfo | URL) => {
+    capturedUrl = String(input);
+    return Promise.resolve(
+      new Response(JSON.stringify([]), { status: 200 }),
+    );
+  };
+  try {
+    const api = new AudioInfoAPI("http://localhost:8010");
+    await api.listAlbumTracks("Travels");
+    assertEquals(
+      capturedUrl,
+      "http://localhost:8010/api/list/album-tracks?dir=Travels",
+    );
+  } finally {
+    restoreFetch();
+  }
+});
+
+Deno.test("listAlbumTracks - returns AudioInfo array", async () => {
+  const fixture = [{ ID: "abc", Name: "Departure Suite" }];
+  mockFetch(fixture);
+  try {
+    const api = new AudioInfoAPI();
+    const results = await api.listAlbumTracks("Travels");
+    assertEquals(results.length, 1);
+    assertEquals(results[0].Name, "Departure Suite");
+  } finally {
+    restoreFetch();
+  }
+});
+
 Deno.test("search - encodes query in URL", async () => {
   let capturedUrl = "";
   globalThis.fetch = (input: RequestInfo | URL) => {

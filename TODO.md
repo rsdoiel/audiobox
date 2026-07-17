@@ -3,13 +3,13 @@
 
 ## Bugs
 
-- [ ] When searching for an artist need to able to queue albums in additional to individual songs
-- [ ] When picking the Artist button, the albums for an artist should be shown first when drilling down to see what the Artist is associated with, albums should have the plus button tto add a whole album to queue
-- [ ] When I add the "Travel" album to a playlist is pickups more than Jake Shimabukuro's "Travel" it also adds ZBS's "Travels with Jack"
-- [ ] When I search for Jake or Shimabukuro I am only getting back one of his albums, even when the "Artist" button was previously selected
-- [ ] When I type in an artist name under the Albums list, it should return a list of albums by the Artest name, do I need to have query prefix like "artist:Shimabukuro" to do that?
-- [ ] The scan action has no visual indicator that is had completed, a progress indicator would be nice to include
-- [ ] The sweep action has no visual indicator that it has completed, a progress indicator would be nice to include
+- [x] When searching for an artist need to able to queue albums in additional to individual songs — clicking an artist (or filtering Albums by artist name) now shows that artist's albums with a "+" add-to-queue button per album, resolved via exact album directory rather than tag text.
+- [x] When picking the Artist button, the albums for an artist should be shown first when drilling down to see what the Artist is associated with, albums should have the plus button tto add a whole album to queue — Artists-tab drilldown now shows albums-first (falls back to a flat track list only when a track can't be resolved to an album directory).
+- [x] When I add the "Travel" album to a playlist is pickups more than Jake Shimabukuro's "Travel" it also adds ZBS's "Travels with Jack" — root cause was two bugs: (1) field-scoped exact queries were silently falling back to Levenshtein fuzzy matching on zero results, conflating "Travel"/"Travels"; (2) Albums-tab clicks/add-to-queue resolved via tag-based search instead of the exact album directory already known from the browse list. Both fixed; see SearchAudioFiles/GetTracksByAlbumDir and the Albums-tab wiring in audiobox_player.ts.
+- [ ] When I search for Jake or Shimabukuro I am only getting back one of his albums, even when the "Artist" button was previously selected — root cause identified: `.wav` files aren't a supported tag format (dhowden/tag has no WAV support), so untagged `.wav` albums stored one level deep (`Albums/<Album>/track.wav`, no separate Artist folder) fall back to artist "Unknown" instead of the real artist. Deliberately deferred (needs a WAV RIFF/LIST-INFO chunk parser); tracked as a follow-up, not folded into this pass.
+- [x] When I type in an artist name under the Albums list, it should return a list of albums by the Artest name, do I need to have query prefix like "artist:Shimabukuro" to do that? — no prefix needed: typing plain text while the Albums tab is active now filters by album name OR artist name (matches both `album:"…"` and `artist:"…"`); an explicit field prefix (album:/artist:/title:/genre:) still works and is documented in the search box's placeholder/tooltip.
+- [x] The scan action has no visual indicator that is had completed, a progress indicator would be nice to include — already implemented (web UI shows a live elapsed-time status with completed/error styling; CLI prints "Scanning…"/"Scan complete."); verified by code inspection, no change needed.
+- [x] The sweep action has no visual indicator that it has completed, a progress indicator would be nice to include — already implemented (web UI shows live status + removed-record count; CLI prints a completion summary); verified by code inspection, no change needed.
 - [ ] When I run `audiobox scan` I am seeing errors like ```MACMINI-RD:~ rsdoiel$ audiobox scan
 Scanning…
 audiobox: warning: could not read tags from /Users/rsdoiel/Audio/Music/Albums/Peace-Love-Ukulele/01 143 (Kelly's Song) 2011.wav: no tags found
@@ -25,7 +25,8 @@ audiobox: warning: could not read tags from /Users/rsdoiel/Audio/Music/Albums/Pe
 audiobox: warning: could not read tags from /Users/rsdoiel/Audio/Music/Albums/Peace-Love-Ukulele/11 Hallelujah.wav: no tags found
 audiobox: warning: could not read tags from /Users/rsdoiel/Audio/Music/Albums/Peace-Love-Ukulele/12 Bohemian Rhapsody - Live Version.wav: no tags found
 ```
-- [ ] An Album's song list for ```MACMINI-RD:~ rsdoiel$ ls -1 Audio/Music/Albums/Milton-plus-Esperanza/
+  Root cause: `.wav` isn't a supported tag format (dhowden/tag). Same deferred WAV RIFF/LIST-INFO parsing work as the Jake Shimabukuro bug above would fix this too — one follow-up covers both.
+- [x] An Album's song list for ```MACMINI-RD:~ rsdoiel$ ls -1 Audio/Music/Albums/Milton-plus-Esperanza/
 01 - the music was there.mp3
 02 - Cais.mp3
 03 - Late September.mp3
@@ -43,7 +44,8 @@ audiobox: warning: could not read tags from /Users/rsdoiel/Audio/Music/Albums/Pe
 15 - outro planeta.mp3
 16 - When You Dream [feat. Carolina Shorter].mp3
 ``` doesn't show up when in look for it in the individual web view for Albums, it does show up if I search by artist
-- [ ] The Album Travels, ```MACMINI-RD:~ rsdoiel$ ls -1 Audio/Music/Albums/Travels
+  Fixed: the Albums tab now resolves an album's tracks by its exact directory (GetTracksByAlbumDir / GET /api/list/album-tracks) instead of a tag-based search, so a tag/directory-name mismatch (e.g. tag text differing from the deslugified folder name) can no longer make an album appear empty.
+- [x] The Album Travels, ```MACMINI-RD:~ rsdoiel$ ls -1 Audio/Music/Albums/Travels
 01 Departure Suite - part I.wav
 02 Train Ride.wav
 03 Low Rider.wav
@@ -65,11 +67,13 @@ audiobox: warning: could not read tags from /Users/rsdoiel/Audio/Music/Albums/Pe
 19 Early Song.wav
 20 Tip Toe.wav
 ``` is also lists content from Travels with Jack in the Web View (might be an error in the SQL or how the metadata is stored in the SQLite3 database)
-- [ ] The folder view in the web UI does not let me drill down into the folders that are inside `Music/Album`
-- [ ] The search feature should be clearer about constraints/context of search (searching by album name, searching by artist, etc).
+  Fixed: same root cause as the "Travel"/"Travels with Jack" playlist bug above (fuzzy fallback + tag-based album resolution) — directory-exact resolution means "Travels" can never again pull in a sibling directory like "Travels with Jack".
+- [x] The folder view in the web UI does not let me drill down into the folders that are inside `Music/Album` — the folder tree was hardcoded to two levels (root + one child); it now expands every directory at every depth as its own row (see buildFolderTree), each independently selectable, toggleable, and queueable.
+- [x] The search feature should be clearer about constraints/context of search (searching by album name, searching by artist, etc). — the search box now has a placeholder and tooltip documenting album:/artist:/title:/genre: prefixes and /regex/ syntax.
 
 ## Next
 
+- [ ] Add WAV metadata support: dhowden/tag has no WAV reader, so every `.wav` file scans with a "no tags found" warning and falls back to path-derived metadata — which loses artist attribution entirely for single-level `Albums/<Album>/track.wav` layouts (no Artist folder to fall back on). Needs a small RIFF/LIST-INFO chunk parser (IART/INAM/IPRD/ITRK) used as a fallback before the path-derived/"Unknown" fallback in ProcessAudioFile. Fixes both the Jake Shimabukuro artist-search bug and the scan warning spam above.
 - [ ] It would be nice to build playlists based on artist name, date of first release (example 1965 to 1975 music)
 - [ ] There needs to be a means of importing and exporting a playlist as OPML files
 - [ ] An A-Z list jump option or filter needs to be available for Albums, Artists and Titles

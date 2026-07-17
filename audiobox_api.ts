@@ -243,6 +243,26 @@ export class AudioInfoAPI {
     return this.getJSON<AudioInfo[]>(`/api/list/folder-tracks?dir=${encodeURIComponent(dir)}`);
   }
 
+  /** listAlbumTracks returns all audio files under the given album directory.
+   * Resolves by directory, not by tag — use this (rather than search) to load
+   * an album's tracks once you already have its Album.dir from listAlbums(),
+   * so a tag/directory-name mismatch or a similarly-named sibling album
+   * never causes wrong or missing tracks.
+   *
+   * Parameters:
+   *   dir (string) — album directory as returned by listAlbums(), e.g. "Jazz/Kind-Of-Blue"
+   *
+   * Returns:
+   *   Promise<AudioInfo[]> — tracks in disc/track/name order
+   *
+   * Example:
+   *   const albums = await api.listAlbums();
+   *   const tracks = await api.listAlbumTracks(albums[0].dir);
+   */
+  async listAlbumTracks(dir: string): Promise<AudioInfo[]> {
+    return this.getJSON<AudioInfo[]>(`/api/list/album-tracks?dir=${encodeURIComponent(dir)}`);
+  }
+
   /** search queries the collection by title, album, or artist.
    *
    * Parameters:

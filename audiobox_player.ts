@@ -87,6 +87,115 @@ export function buildBrowseQuery(tab: string, item: string): string {
   }
 }
 
+/** isFieldScopedQuery reports whether every term of a search query is
+ * scoped to a known field (album:, artist:, title:, genre:, recording:,
+ * recording_of:, name:), matching the server's parseQuery field-alias
+ * table — an unrecognised "alias:" prefix is plain text there too, so
+ * this must agree or a client-side "is this exact?" decision would
+ * disagree with the search actually performed.
+ *
+ * Parameters:
+ *   q (string) — raw search box text
+ *
+ * Returns:
+ *   boolean — true when q starts with a recognised field: prefix
+ *
+ * Example:
+ *   isFieldScopedQuery("artist:Shimabukuro") // true
+ *   isFieldScopedQuery("Shimabukuro")        // false
+ */
+export function isFieldScopedQuery(q: string): boolean {
+  return /^\s*(title|name|album|artist|genre|recording_of|recording)\s*:/i.test(q);
+}
+
+/** dirOfContentURL returns the directory portion of a track's ContentURL,
+ * matching how the server derives an Album's `dir` (filepath.Dir of the
+ * stored content_url) — used to map free-text search results back to the
+ * exact album directories they belong to.
+ *
+ * Parameters:
+ *   url (string) — a track's ContentURL, relative or absolute, either separator style
+ *
+ * Returns:
+ *   string — the directory portion, "" when url has no directory component
+ *
+ * Example:
+ *   dirOfContentURL("Travels/01-departure.wav") // "Travels"
+ */
+export function dirOfContentURL(url: string): string {
+  const parts = url.replace(/\\/g, "/").split("/");
+  parts.pop();
+  return parts.join("/");
+}
+
+/** FolderTreeNode is one navigable row of a fully-expanded, indented folder
+ * tree built from the flat FolderEntry list returned by GET /api/list/folders.
+ */
+export interface FolderTreeNode {
+  path: string;
+  depth: number;
+  name: string;
+  /** Tracks stored directly in this exact directory (not its subfolders). */
+  ownCount: number;
+  /** Tracks in this directory plus every subfolder beneath it. */
+  totalCount: number;
+  hasChildren: boolean;
+}
+
+/** buildFolderTree expands the flat FolderEntry list (which only contains
+ * directories that directly hold audio files) into a node for every
+ * directory AND every ancestor of every directory, at unlimited depth, so a
+ * folder nested arbitrarily deep (e.g. "Music/Albums/Artist/Album/Disc-1")
+ * gets its own row instead of being silently folded into a shallower
+ * ancestor's track count with no way to select it on its own.
+ *
+ * Parameters:
+ *   folders (FolderEntry[]) — flat list as returned by GET /api/list/folders
+ *
+ * Returns:
+ *   FolderTreeNode[] — one node per distinct directory path (leaf or
+ *   ancestor), unsorted; sort by `path` for a parent-before-children display
+ *   order (safe because "/" sorts before any letter or digit)
+ *
+ * Example:
+ *   const tree = buildFolderTree(await api.listFolders());
+ *   tree.sort((a, b) => a.path.localeCompare(b.path));
+ */
+export function buildFolderTree(folders: FolderEntry[]): FolderTreeNode[] {
+  const nodes = new Map<string, FolderTreeNode>();
+  const ensure = (path: string, depth: number): FolderTreeNode => {
+    let n = nodes.get(path);
+    if (!n) {
+      n = {
+        path,
+        depth,
+        name: path.split("/").pop() ?? path,
+        ownCount: 0,
+        totalCount: 0,
+        hasChildren: false,
+      };
+      nodes.set(path, n);
+    }
+    return n;
+  };
+
+  for (const f of folders) {
+    const parts = f.path.replace(/\\/g, "/").split("/").filter(Boolean);
+    if (parts.length === 0) continue;
+    ensure(parts.join("/"), parts.length - 1).ownCount += f.trackCount;
+    let acc = "";
+    for (let i = 0; i < parts.length; i++) {
+      acc = i === 0 ? parts[0] : `${acc}/${parts[i]}`;
+      ensure(acc, i).totalCount += f.trackCount;
+      if (i > 0) {
+        ensure(parts.slice(0, i).join("/"), i - 1).hasChildren = true;
+      }
+    }
+  }
+
+  return [...nodes.values()];
+}
+
 // ---------------------------------------------------------------------------
 // Shadow DOM template
 // ---------------------------------------------------------------------------
@@ -351,7 +460,8 @@ export const PLAYER_TEMPLATE = `
     <button class="tab" data-tab="playlists">Playlists</button>
   </div>
   <div class="search-bar">
-    <input type="search" placeholder="Search..." />
+    <input type="search" placeholder="Search, or album:Name / artist:Name / title:Name / /regex/"
+           title="Plain text searches everywhere. Narrow with album:, artist:, title:, or genre: (quote multi-word values), or use /regex/. On the Albums tab, plain text filters by album or artist name." />
     <button class="search-btn">Search</button>
   </div>
   <div class="list-panel">
@@ -616,6 +726,104 @@ export class AudioInfoPlayer extends _Base {
     }
   }
 
+  /** _runSearch dispatches a search-box query to the right handler for the
+   * currently active browse tab. On the Albums tab it filters the album list
+   * itself (_searchAlbumsTab) so a query like an artist's name — with or
+   * without an explicit "artist:" prefix — narrows down to that artist's
+   * albums while staying in the Albums browsing view (click/add-to-queue
+   * still resolve by exact directory, not by tag). Every other tab keeps the
+   * existing cross-tab grouped-results search.
+   */
+  private _runSearch(q: string): void {
+    if (this.currentBrowseTab === "albums") {
+      this._searchAlbumsTab(q);
+    } else {
+      this._runGroupedSearch(q);
+    }
+  }
+
+  /** _searchAlbumsTab filters the Albums browse list down to albums that
+   * match the query by album name or artist name — a bare query (no field
+   * prefix) is tried against both album: and artist: so that typing e.g.
+   * "Shimabukuro" while browsing Albums finds his albums without requiring
+   * the user to know the artist: prefix syntax. An explicit field:value
+   * query (album:, artist:, title:, ...) is passed through as-is.
+   *
+   * Matches are resolved to albums by comparing each result track's
+   * directory (dirOfContentURL) against each album's exact `dir` — the same
+   * directory-based identity used by listAlbumTracks — so a tag/directory
+   * mismatch never causes an album to wrongly appear or disappear here.
+   */
+  private async _searchAlbumsTab(q: string): Promise<void> {
+    const trimmed = q.trim();
+    if (!trimmed) return;
+    this._setListContent('<div class="list-empty">Searching…</div>');
+    try {
+      let tracks: AudioInfo[];
+      if (isFieldScopedQuery(trimmed)) {
+        tracks = await this.api.search(trimmed);
+      } else {
+        const esc = (s: string) => s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+        const [byAlbum, byArtist] = await Promise.all([
+          this.api.search(`album:"${esc(trimmed)}"`),
+          this.api.search(`artist:"${esc(trimmed)}"`),
+        ]);
+        tracks = [...byAlbum, ...byArtist];
+      }
+      if (tracks.length === 0) {
+        this._setListContent('<div class="list-empty">No matching albums</div>');
+        return;
+      }
+      const filtered = await this._albumsMatchingTracks(tracks);
+      if (filtered.length === 0) {
+        this._setListContent('<div class="list-empty">No matching albums</div>');
+        return;
+      }
+      this._renderAlbumList(filtered);
+    } catch (e) {
+      this._setListContent(`<div class="list-empty">${this._escHtml(String(e))}</div>`);
+    }
+  }
+
+  /** _albumsMatchingTracks resolves a set of tracks (e.g. from a tag-based
+   * search) back to the exact AlbumEntry objects they belong to, by matching
+   * each track's directory against each album's `dir`. Reused by both
+   * _searchAlbumsTab and _drillDownArtistAlbums so "queue this album" always
+   * goes through the same exact directory-based resolution as the Albums tab.
+   */
+  private async _albumsMatchingTracks(tracks: AudioInfo[]): Promise<AlbumEntry[]> {
+    const matchedDirs = new Set(tracks.map((t) => dirOfContentURL(t.ContentURL ?? "")));
+    const albums = await this.api.listAlbums(this._getExcludedFolderPaths());
+    return albums.filter((a) => matchedDirs.has(a.dir));
+  }
+
+  /** _drillDownArtistAlbums shows the albums an artist appears on (each with
+   * its own "add to queue" button) rather than a flat list of their
+   * individual tracks, so a whole album can be queued in one click from the
+   * Artists tab. Falls back to a flat track drilldown for tracks that can't
+   * be resolved to an album directory (e.g. loose singles at the AudioDir
+   * root).
+   */
+  private async _drillDownArtistAlbums(artistName: string): Promise<void> {
+    this._setListContent('<div class="list-empty">Loading…</div>');
+    try {
+      const esc = (s: string) => s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+      const tracks = await this.api.search(`artist:"${esc(artistName)}"`);
+      if (tracks.length === 0) {
+        this._setListContent('<div class="list-empty">No albums found</div>');
+        return;
+      }
+      const albums = await this._albumsMatchingTracks(tracks);
+      if (albums.length === 0) {
+        this._showDrilldown(tracks, `Artist: ${artistName}`);
+        return;
+      }
+      this._renderAlbumList(albums);
+    } catch (e) {
+      this._setListContent(`<div class="list-empty">${this._escHtml(String(e))}</div>`);
+    }
+  }
+
   private async _runGroupedSearch(q: string): Promise<void> {
     if (!q.trim()) return;
     const trimmed = q.trim();
@@ -718,8 +926,12 @@ export class AudioInfoPlayer extends _Base {
   }
 
   /** _renderAlbumList renders the albums browse list. data-browse-item is set to the
-   * plain album name (the search key) while the visible text shows displayName so that
-   * clicking a disambiguated entry like "Best Of [Classical]" searches album:"Best Of".
+   * album's directory (Album.dir) rather than its name, so drilling down or adding to
+   * queue resolves tracks by exact directory (listAlbumTracks) instead of a tag-based
+   * search — this avoids mixing tracks from a similarly-named sibling album (e.g.
+   * "Travel" vs "Travels with Jack") or missing tracks whose tags disagree with the
+   * directory-derived name. The visible text shows displayName; data-browse-label
+   * carries it through so the drilldown header reads correctly.
    */
   private _renderAlbumList(albums: AlbumEntry[]): void {
     if (albums.length === 0) {
@@ -730,9 +942,9 @@ export class AudioInfoPlayer extends _Base {
       albums
         .map(
           (a) =>
-            `<div class="list-item" data-browse-tab="albums" data-browse-item="${this._escAttr(a.name)}">` +
+            `<div class="list-item" data-browse-tab="albums" data-browse-item="${this._escAttr(a.dir)}" data-browse-label="${this._escAttr(a.displayName)}">` +
             `<div class="list-item-main"><div class="list-item-title">${this._escHtml(a.displayName)}</div></div>` +
-            `<button class="row-add-btn" title="Add to queue" data-add-tab="albums" data-add-item="${this._escAttr(a.name)}">⊕</button>` +
+            `<button class="row-add-btn" title="Add to queue" data-add-tab="albums" data-add-item="${this._escAttr(a.dir)}">⊕</button>` +
             `</div>`,
         )
         .join(""),
@@ -757,75 +969,38 @@ export class AudioInfoPlayer extends _Base {
     );
   }
 
+  /** _renderFolderList renders the full folder tree as a single flat,
+   * indented list — one row per directory at every depth (not just the top
+   * two levels) — so a folder nested arbitrarily deep can still be selected,
+   * toggled, or drilled into directly. See buildFolderTree.
+   */
   private _renderFolderList(folders: FolderEntry[]): void {
     if (folders.length === 0) {
       this._setListContent('<div class="list-empty">No folders found</div>');
       return;
     }
 
-    // Derive unique root names (first path component).
-    const rootNames = new Set<string>();
-    for (const f of folders) {
-      const first = f.path.replace(/\\/g, "/").split("/")[0];
-      if (first) rootNames.add(first);
-    }
-    const roots = [...rootNames].sort();
+    const tree = buildFolderTree(folders).sort((a, b) => a.path.localeCompare(b.path));
 
     let html = "";
-    for (const root of roots) {
-      const rootEnabled = this._isFolderEnabled(root);
-
-      // Sum tracks under this root.
-      const rootFolders = folders.filter(
-        (f) => f.path === root || f.path.startsWith(root + "/"),
-      );
-      const rootCount = rootFolders.reduce((s, f) => s + f.trackCount, 0);
-
-      // Build level-2 child map: "root/child" → trackCount.
-      const childMap = new Map<string, number>();
-      for (const f of rootFolders) {
-        const rest = f.path.startsWith(root + "/")
-          ? f.path.slice(root.length + 1)
-          : "";
-        if (!rest) continue; // tracks directly in root — counted but no child row
-        const childName = rest.split("/")[0];
-        const childPath = root + "/" + childName;
-        childMap.set(childPath, (childMap.get(childPath) ?? 0) + f.trackCount);
-      }
-      const children = [...childMap.entries()]
-        .map(([path, count]) => ({ path, count }))
-        .sort((a, b) => a.path.localeCompare(b.path));
-
-      const tCls = rootEnabled ? " on" : "";
-      const addDis = rootEnabled ? "" : " disabled";
+    for (const node of tree) {
+      const selfEnabled = this._isFolderEnabled(node.path);
+      const effectiveEnabled = this._isFolderEffectivelyEnabled(node.path);
+      const name = this._deslugify(node.name);
+      const tCls = selfEnabled ? " on" : "";
+      const addDis = effectiveEnabled ? "" : " disabled";
+      const rowCls = node.depth > 0 ? " folder-child" : "";
+      const indent = node.depth > 0 ? ` style="padding-left: ${node.depth * 1.25}em"` : "";
       html +=
-        `<div class="list-item" data-browse-tab="folders" data-browse-item="${this._escAttr(root)}">` +
-        `<div class="list-item-main">` +
-        `<div class="list-item-title">${this._escHtml(root)}</div>` +
-        `<div class="list-item-sub">${rootCount} track${rootCount !== 1 ? "s" : ""}` +
-        (children.length > 0 ? ` · ${children.length} sub-folder${children.length !== 1 ? "s" : ""}` : "") +
+        `<div class="list-item${rowCls}" data-browse-tab="folders" data-browse-item="${this._escAttr(node.path)}">` +
+        `<div class="list-item-main"${indent}>` +
+        `<div class="list-item-title">${this._escHtml(name)}</div>` +
+        `<div class="list-item-sub">${node.totalCount} track${node.totalCount !== 1 ? "s" : ""}` +
+        (node.hasChildren ? ` · sub-folders` : "") +
         `</div></div>` +
-        `<button class="folder-toggle-btn${tCls}" data-toggle-folder="${this._escAttr(root)}">${rootEnabled ? "ON" : "OFF"}</button>` +
-        `<button class="row-add-btn"${addDis} title="Add to queue" data-add-tab="folders" data-add-item="${this._escAttr(root)}">⊕</button>` +
+        `<button class="folder-toggle-btn${tCls}" data-toggle-folder="${this._escAttr(node.path)}">${selfEnabled ? "ON" : "OFF"}</button>` +
+        `<button class="row-add-btn"${addDis} title="Add to queue" data-add-tab="folders" data-add-item="${this._escAttr(node.path)}">⊕</button>` +
         `</div>`;
-
-      for (const child of children) {
-        const childName = this._deslugify(child.path.split("/").pop() ?? child.path);
-        // Child is effectively enabled only when root is also enabled.
-        const childSelfEnabled = this._isFolderEnabled(child.path);
-        const childEnabled = rootEnabled && childSelfEnabled;
-        const cTCls = childSelfEnabled ? " on" : "";
-        const cAddDis = childEnabled ? "" : " disabled";
-        html +=
-          `<div class="list-item folder-child" data-browse-tab="folders" data-browse-item="${this._escAttr(child.path)}">` +
-          `<div class="list-item-main">` +
-          `<div class="list-item-title">${this._escHtml(childName)}</div>` +
-          `<div class="list-item-sub">${child.count} track${child.count !== 1 ? "s" : ""}</div>` +
-          `</div>` +
-          `<button class="folder-toggle-btn${cTCls}" data-toggle-folder="${this._escAttr(child.path)}" data-toggle-root="${this._escAttr(root)}">${childSelfEnabled ? "ON" : "OFF"}</button>` +
-          `<button class="row-add-btn"${cAddDis} title="Add to queue" data-add-tab="folders" data-add-item="${this._escAttr(child.path)}">⊕</button>` +
-          `</div>`;
-      }
     }
 
     this._setListContent(html);
@@ -896,6 +1071,20 @@ export class AudioInfoPlayer extends _Base {
     const parts = path.replace(/\\/g, "/").split("/").filter(Boolean);
     const label = `📁 ${parts[parts.length - 1] || path}`;
     this.api.listFolderTracks(path)
+      .then((tracks) => this._showDrilldown(tracks, label))
+      .catch((err) => this._setListContent(
+        `<div class="list-empty">${this._escHtml(String(err))}</div>`,
+      ));
+  }
+
+  /** _drillDownAlbum fetches all tracks under an album directory and renders them
+   * in the list panel. Uses the exact directory rather than a tag-based search so
+   * a tag/directory-name mismatch or a similarly-named sibling album never causes
+   * wrong or missing tracks.
+   */
+  private _drillDownAlbum(dir: string, label: string): void {
+    this._setListContent('<div class="list-empty">Loading…</div>');
+    this.api.listAlbumTracks(dir)
       .then((tracks) => this._showDrilldown(tracks, label))
       .catch((err) => this._setListContent(
         `<div class="list-empty">${this._escHtml(String(err))}</div>`,
@@ -1050,9 +1239,9 @@ export class AudioInfoPlayer extends _Base {
 
     // Search
     const searchInput = this.qs<HTMLInputElement>(".search-bar input");
-    this.qs(".search-btn").addEventListener("click", () => this._runGroupedSearch(searchInput.value));
+    this.qs(".search-btn").addEventListener("click", () => this._runSearch(searchInput.value));
     searchInput.addEventListener("keydown", (e: Event) => {
-      if ((e as KeyboardEvent).key === "Enter") this._runGroupedSearch(searchInput.value);
+      if ((e as KeyboardEvent).key === "Enter") this._runSearch(searchInput.value);
     });
 
     // Browse/result list clicks (delegated on list-panel)
@@ -1141,6 +1330,10 @@ export class AudioInfoPlayer extends _Base {
           this.api.listFolderTracks(item)
             .then((tracks) => this._addToQueue(tracks))
             .catch((err) => console.warn("add folder to queue:", String(err)));
+        } else if (tab === "albums") {
+          this.api.listAlbumTracks(item)
+            .then((tracks) => this._addToQueue(tracks))
+            .catch((err) => console.warn("add album to queue:", String(err)));
         } else if (tab) {
           const q = buildBrowseQuery(tab, item);
           this.api.search(q)
@@ -1173,6 +1366,12 @@ export class AudioInfoPlayer extends _Base {
       if (el.dataset.browseTab) {
         if (el.dataset.browseTab === "folders") {
           this._drillDownFolder(el.dataset.browseItem ?? "");
+        } else if (el.dataset.browseTab === "albums") {
+          const dir = el.dataset.browseItem ?? "";
+          const label = el.dataset.browseLabel ?? dir;
+          this._drillDownAlbum(dir, `Album: ${label}`);
+        } else if (el.dataset.browseTab === "artists") {
+          this._drillDownArtistAlbums(el.dataset.browseItem ?? "");
         } else {
           this._drillDown(el.dataset.browseTab, el.dataset.browseItem ?? "");
         }
@@ -1570,6 +1769,20 @@ export class AudioInfoPlayer extends _Base {
   private _isFolderEnabled(path: string): boolean {
     const v = this.folderEnabled.get(path);
     return v === undefined ? true : v;
+  }
+
+  /** _isFolderEffectivelyEnabled reports whether path AND every ancestor of
+   * path is enabled, so a subfolder can never appear addable while an
+   * ancestor several levels up has been excluded.
+   */
+  private _isFolderEffectivelyEnabled(path: string): boolean {
+    const parts = path.split("/");
+    let acc = "";
+    for (const p of parts) {
+      acc = acc ? `${acc}/${p}` : p;
+      if (!this._isFolderEnabled(acc)) return false;
+    }
+    return true;
   }
 
   private async _loadFolderEnabledFromServer(): Promise<void> {

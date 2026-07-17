@@ -137,6 +137,7 @@ func (c *Collection) Serve(logger *log.Logger) error {
 	mux.HandleFunc("GET /api/list/titles", c.handleListTitles(logger))
 	mux.HandleFunc("GET /api/list/folders", c.handleListFolders(logger))
 	mux.HandleFunc("GET /api/list/folder-tracks", c.handleListFolderTracks(logger))
+	mux.HandleFunc("GET /api/list/album-tracks", c.handleListAlbumTracks(logger))
 	mux.HandleFunc("GET /api/search", c.handleSearch(logger))
 	mux.HandleFunc("GET /api/show/{id}", c.handleShow(logger))
 	mux.HandleFunc("DELETE /api/show/{id}", c.handleDelete(logger))
@@ -342,6 +343,23 @@ func (c *Collection) handleListFolderTracks(logger *log.Logger) http.HandlerFunc
 		tracks, err := c.GetFolderTracks(dir)
 		if err != nil {
 			logger.Printf("list folder-tracks %q: %v", dir, err)
+			writeJSONError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, tracks)
+	}
+}
+
+func (c *Collection) handleListAlbumTracks(logger *log.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		dir := r.URL.Query().Get("dir")
+		if dir == "" {
+			writeJSONError(w, http.StatusBadRequest, "dir parameter required")
+			return
+		}
+		tracks, err := c.GetTracksByAlbumDir(dir)
+		if err != nil {
+			logger.Printf("list album-tracks %q: %v", dir, err)
 			writeJSONError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
@@ -764,16 +782,21 @@ POST /api/init     — initialise or upgrade the ~/Audio collection
 ## List
 
 ` + "```" + `
-GET /api/list/albums         — distinct album names
+GET /api/list/albums         — album entries derived from directory structure
 GET /api/list/artists        — distinct artist names
 GET /api/list/titles         — distinct recording titles
 GET /api/list/folders        — directories containing audio files
 GET /api/list/folder-tracks  — tracks inside a folder (?dir=relative/path)
+GET /api/list/album-tracks   — tracks inside an album directory (?dir=Album.Dir from /api/list/albums)
 ` + "```" + `
 
-albums, artists, and titles each return a JSON array of strings.
+albums returns a JSON array of Album objects: {name, displayName, dir}.
+artists and titles each return a JSON array of strings.
 folders returns a JSON array of FolderEntry objects: {path, name, trackCount}.
-folder-tracks returns a JSON array of AudioInfo objects.
+folder-tracks and album-tracks each return a JSON array of AudioInfo objects, resolved by
+directory rather than by tag — use these (not a field-scoped search) when the caller already
+knows the exact directory, e.g. from a prior list/albums or list/folders response, so that
+tag/directory-name mismatches or ambiguous tags never mix tracks from a different release.
 
 ## Search
 

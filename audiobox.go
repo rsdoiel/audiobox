@@ -537,6 +537,17 @@ func hasRegexToken(tokens []queryToken) bool {
 	return false
 }
 
+// hasUnscopedToken reports whether any token in the slice is unscoped
+// (field == ""), i.e. free text rather than a field:value selection.
+func hasUnscopedToken(tokens []queryToken) bool {
+	for _, t := range tokens {
+		if t.field == "" {
+			return true
+		}
+	}
+	return false
+}
+
 // buildFTS5Query converts plain (non-regex) queryTokens into an FTS5 MATCH expression.
 // Field-scoped tokens produce FTS5 field:term syntax; unscoped tokens are bare phrases.
 // All terms are AND-ed (FTS5 default for space-separated expressions).
@@ -1313,10 +1324,35 @@ func escapeLIKE(s string) string {
  *   tracks, err := col.GetTracksByAlbum(albums[0])
  */
 func (c *Collection) GetTracksByAlbum(album Album) ([]AudioInfo, error) {
+	return c.GetTracksByAlbumDir(album.Dir)
+}
+
+/** GetTracksByAlbumDir returns all audio tracks stored under the given album
+ * directory, sorted by disc number then track number then name. The
+ * directory is the sole filter — the in_album tag is not consulted — so
+ * releases whose tags are missing, incomplete, or disagree with the
+ * directory name (e.g. an untagged .wav album, or a tag reading "Live"
+ * instead of "801 Live") are handled correctly, and a sibling directory
+ * whose name shares a prefix (e.g. "Travels" vs "Travels with Jack") never
+ * bleeds into the result.
+ *
+ * Parameters:
+ *   dir (string) — album directory relative to AudioDir, as returned by
+ *                   GetAlbumEntries' Album.Dir field
+ *
+ * Returns:
+ *   []AudioInfo — matching tracks in play order; empty slice when none found
+ *   error       — non-nil on database failure
+ *
+ * Example:
+ *   albums, _ := col.GetAlbumEntries()
+ *   tracks, err := col.GetTracksByAlbumDir(albums[0].Dir)
+ */
+func (c *Collection) GetTracksByAlbumDir(dir string) ([]AudioInfo, error) {
 	if !c.isOpen {
 		return nil, fmt.Errorf("collection is not open")
 	}
-	pattern := escapeLIKE(album.Dir) + string(filepath.Separator) + "%"
+	pattern := escapeLIKE(dir) + string(filepath.Separator) + "%"
 	rows, err := c.db.Query(`
 		SELECT id, schema_type, name, description, content_url, encoding_format,
 		       duration, date_published, in_language, genre, identifiers, by_artist,
@@ -1327,7 +1363,7 @@ func (c *Collection) GetTracksByAlbum(album Album) ([]AudioInfo, error) {
 		ORDER BY disc_number, track_number, name`,
 		pattern)
 	if err != nil {
-		return nil, fmt.Errorf("querying tracks for album %q: %w", album.DisplayName, err)
+		return nil, fmt.Errorf("querying tracks for album dir %q: %w", dir, err)
 	}
 	defer rows.Close()
 
@@ -1340,7 +1376,7 @@ func (c *Collection) GetTracksByAlbum(album Album) ([]AudioInfo, error) {
 		results = append(results, info)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterating tracks for album %q: %w", album.Name, err)
+		return nil, fmt.Errorf("iterating tracks for album dir %q: %w", dir, err)
 	}
 	if results == nil {
 		results = []AudioInfo{}
@@ -1627,9 +1663,14 @@ func (c *Collection) SearchAudioFiles(query string) ([]AudioInfo, error) {
 		ORDER BY rank`,
 		ftsQuery,
 	)
+	allowFuzzy := hasUnscopedToken(tokens)
 	if err != nil {
-		// FTS5 may reject malformed query strings; fall through to fuzzy.
-		return c.fuzzySearch(tokens)
+		// FTS5 may reject malformed query strings; fall through to fuzzy
+		// only when the query has a free-text component to be lenient about.
+		if allowFuzzy {
+			return c.fuzzySearch(tokens)
+		}
+		return []AudioInfo{}, nil
 	}
 	defer rows.Close()
 
@@ -1644,9 +1685,15 @@ func (c *Collection) SearchAudioFiles(query string) ([]AudioInfo, error) {
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterating search results: %w", err)
 	}
-	if len(results) == 0 {
-		// FTS5 found nothing — try Levenshtein fuzzy scan as fallback.
+	if len(results) == 0 && allowFuzzy {
+		// FTS5 found nothing and the query has a free-text component — try
+		// Levenshtein fuzzy scan as fallback. Queries made entirely of
+		// field:value selections (e.g. an album picked from a browse list)
+		// are exact lookups and must not fuzzy-match unrelated entries.
 		return c.fuzzySearch(tokens)
+	}
+	if results == nil {
+		results = []AudioInfo{}
 	}
 	return results, nil
 }

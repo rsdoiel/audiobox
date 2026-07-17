@@ -4,8 +4,11 @@ import { DOMParser } from "deno-dom";
 // Pure utility functions — no DOM required
 import {
   buildBrowseQuery,
+  buildFolderTree,
+  dirOfContentURL,
   formatArtists,
   formatDuration,
+  isFieldScopedQuery,
   parseDurationSecs,
   PLAYER_TEMPLATE,
 } from "./audiobox_player.ts";
@@ -121,6 +124,119 @@ Deno.test("buildBrowseQuery - escapes double quotes in item", () => {
 });
 
 // ---------------------------------------------------------------------------
+// buildFolderTree
+// ---------------------------------------------------------------------------
+
+Deno.test("buildFolderTree - flat single-level folders", () => {
+  const tree = buildFolderTree([
+    { path: "Travels", name: "Travels", trackCount: 20 },
+    { path: "Peace-Love-Ukulele", name: "Peace-Love-Ukulele", trackCount: 12 },
+  ]);
+  assertEquals(tree.map((n) => n.path).sort(), ["Peace-Love-Ukulele", "Travels"]);
+  const travels = tree.find((n) => n.path === "Travels")!;
+  assertEquals(travels.depth, 0);
+  assertEquals(travels.ownCount, 20);
+  assertEquals(travels.totalCount, 20);
+  assertEquals(travels.hasChildren, false);
+});
+
+Deno.test("buildFolderTree - reproduces a folder nested 3+ levels deep (bug: could not be drilled into)", () => {
+  // Music/Albums/SomeArtist/SomeAlbum/SomeSubfolder holds tracks directly;
+  // every ancestor must get its own navigable node, not just the first two levels.
+  const tree = buildFolderTree([
+    { path: "Music/Albums/SomeArtist/SomeAlbum/SomeSubfolder", name: "SomeSubfolder", trackCount: 5 },
+  ]);
+  const paths = tree.map((n) => n.path).sort();
+  assertEquals(paths, [
+    "Music",
+    "Music/Albums",
+    "Music/Albums/SomeArtist",
+    "Music/Albums/SomeArtist/SomeAlbum",
+    "Music/Albums/SomeArtist/SomeAlbum/SomeSubfolder",
+  ]);
+
+  const leaf = tree.find((n) => n.path === "Music/Albums/SomeArtist/SomeAlbum/SomeSubfolder")!;
+  assertEquals(leaf.depth, 4);
+  assertEquals(leaf.ownCount, 5);
+  assertEquals(leaf.totalCount, 5);
+  assertEquals(leaf.hasChildren, false);
+
+  const midAncestor = tree.find((n) => n.path === "Music/Albums/SomeArtist")!;
+  assertEquals(midAncestor.depth, 2);
+  assertEquals(midAncestor.ownCount, 0, "an ancestor with no tracks of its own has ownCount 0");
+  assertEquals(midAncestor.totalCount, 5, "ancestors aggregate descendant track counts");
+  assertEquals(midAncestor.hasChildren, true);
+
+  const root = tree.find((n) => n.path === "Music")!;
+  assertEquals(root.depth, 0);
+  assertEquals(root.name, "Music");
+});
+
+Deno.test("buildFolderTree - a directory with tracks of its own AND subfolders sums both into totalCount", () => {
+  const tree = buildFolderTree([
+    { path: "Jazz/MilesDavis", name: "MilesDavis", trackCount: 3 },
+    { path: "Jazz/MilesDavis/Live", name: "Live", trackCount: 7 },
+  ]);
+  const milesDavis = tree.find((n) => n.path === "Jazz/MilesDavis")!;
+  assertEquals(milesDavis.ownCount, 3);
+  assertEquals(milesDavis.totalCount, 10);
+  assertEquals(milesDavis.hasChildren, true);
+});
+
+Deno.test("buildFolderTree - sibling directories sharing a name prefix stay distinct", () => {
+  const tree = buildFolderTree([
+    { path: "Travels", name: "Travels", trackCount: 20 },
+    { path: "Travels with Jack", name: "Travels with Jack", trackCount: 16 },
+  ]);
+  const travels = tree.find((n) => n.path === "Travels")!;
+  const travelsWithJack = tree.find((n) => n.path === "Travels with Jack")!;
+  assertEquals(travels.totalCount, 20);
+  assertEquals(travelsWithJack.totalCount, 16);
+});
+
+// ---------------------------------------------------------------------------
+// isFieldScopedQuery / dirOfContentURL — support artist-filtered Albums-tab
+// search (typing "Shimabukuro" while browsing Albums should filter the
+// album list to his albums, without needing an explicit artist: prefix).
+// ---------------------------------------------------------------------------
+
+Deno.test("isFieldScopedQuery - plain artist name is not field-scoped", () => {
+  assertEquals(isFieldScopedQuery("Shimabukuro"), false);
+});
+
+Deno.test("isFieldScopedQuery - explicit artist: prefix is field-scoped", () => {
+  assertEquals(isFieldScopedQuery("artist:Shimabukuro"), true);
+});
+
+Deno.test("isFieldScopedQuery - explicit album: prefix is field-scoped", () => {
+  assertEquals(isFieldScopedQuery("album:Travel"), true);
+});
+
+Deno.test("isFieldScopedQuery - leading whitespace is tolerated", () => {
+  assertEquals(isFieldScopedQuery("  title:Goldberg"), true);
+});
+
+Deno.test("isFieldScopedQuery - unknown alias is treated as plain text (matches server parseQuery)", () => {
+  assertEquals(isFieldScopedQuery("unknownfield:foo"), false);
+});
+
+Deno.test("dirOfContentURL - single-level album path", () => {
+  assertEquals(dirOfContentURL("Travels/01-departure.wav"), "Travels");
+});
+
+Deno.test("dirOfContentURL - nested album path", () => {
+  assertEquals(dirOfContentURL("Jazz/MilesDavis/Live/track.mp3"), "Jazz/MilesDavis/Live");
+});
+
+Deno.test("dirOfContentURL - root-level file has no directory", () => {
+  assertEquals(dirOfContentURL("track.mp3"), "");
+});
+
+Deno.test("dirOfContentURL - normalizes Windows-style separators", () => {
+  assertEquals(dirOfContentURL("Some\\Windows\\Path\\track.mp3"), "Some/Windows/Path");
+});
+
+// ---------------------------------------------------------------------------
 // PLAYER_TEMPLATE structure (via deno-dom)
 // ---------------------------------------------------------------------------
 
@@ -153,6 +269,21 @@ Deno.test("PLAYER_TEMPLATE - has search input and button", () => {
   const btn = doc.querySelector(".search-btn");
   assertEquals(input !== null, true);
   assertEquals(btn !== null, true);
+});
+
+Deno.test("PLAYER_TEMPLATE - search input documents field-prefix syntax", () => {
+  const doc = new DOMParser().parseFromString(
+    `<html><body>${PLAYER_TEMPLATE}</body></html>`,
+    "text/html",
+  )!;
+  const input = doc.querySelector(".search-bar input")!;
+  const hint = (input.getAttribute("title") ?? "") + (input.getAttribute("placeholder") ?? "");
+  // The hint must mention at least the album:/artist:/title: prefixes so a
+  // user isn't left guessing (TODO.md: "do I need a query prefix like
+  // artist:Shimabukuro?").
+  assertEquals(/album:/i.test(hint), true);
+  assertEquals(/artist:/i.test(hint), true);
+  assertEquals(/title:/i.test(hint), true);
 });
 
 Deno.test("PLAYER_TEMPLATE - now-playing panel is always visible", () => {

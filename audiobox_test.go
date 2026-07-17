@@ -284,6 +284,48 @@ func TestGetTracksByAlbum(t *testing.T) {
 	}
 }
 
+// TestGetTracksByAlbumDir reproduces the "Milton-plus-Esperanza" /
+// "Travels with Jack" bugs: a directory-based lookup must return exactly the
+// tracks under that directory, independent of whatever the in_album tag
+// says (which may be missing, or may differ from the directory name), and
+// must not bleed into a sibling directory whose name happens to share a
+// prefix.
+func TestGetTracksByAlbumDir(t *testing.T) {
+	col, cleanup := setupTestCollection(t)
+	defer cleanup()
+
+	// "Travels" has no album tag at all (as real .wav files without ID3
+	// tags would produce) — directory lookup must still find it by path.
+	untagged := sampleInfo("travels-1")
+	untagged.InAlbum = ""
+	untagged.ContentURL = filepath.Join(testMusicDir, "Travels", "01-departure.wav")
+	untaggedID, err := col.Create(untagged)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// "Travels with Jack" is a sibling directory whose name starts with the
+	// same prefix as "Travels" — must never appear in a "Travels" lookup.
+	sibling := sampleInfo("travels-with-jack-1")
+	sibling.InAlbum = "Travels with Jack"
+	sibling.ContentURL = filepath.Join(testMusicDir, "Travels with Jack", "01-departure.wav")
+	if _, err := col.Create(sibling); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	dir := filepath.Join(testMusicDir, "Travels")
+	tracks, err := col.GetTracksByAlbumDir(dir)
+	if err != nil {
+		t.Fatalf("GetTracksByAlbumDir(%q): %v", dir, err)
+	}
+	if len(tracks) != 1 {
+		t.Fatalf("want 1 track under %q, got %d: %+v", dir, len(tracks), tracks)
+	}
+	if tracks[0].ID != untaggedID {
+		t.Errorf("got track %+v, want the untagged Travels track", tracks[0])
+	}
+}
+
 func TestGetArtists(t *testing.T) {
 	col, cleanup := setupTestCollection(t)
 	defer cleanup()
@@ -412,6 +454,50 @@ func TestSearchAudioFiles(t *testing.T) {
 			t.Error("expected error for invalid regex, got nil")
 		}
 	})
+}
+
+// TestSearchAudioFilesNoFuzzyForFieldScopedQuery reproduces the "Travel" /
+// "Travels with Jack" album-mixing bug: a field-scoped query with no exact
+// FTS match must return zero results rather than silently falling back to
+// Levenshtein fuzzy matching, which conflates similarly-spelled albums.
+func TestSearchAudioFilesNoFuzzyForFieldScopedQuery(t *testing.T) {
+	col, cleanup := setupTestCollection(t)
+	defer cleanup()
+
+	infos := []AudioInfo{
+		{SchemaType: "MusicRecording", Name: "Departure Suite", InAlbum: "Travels with Jack",
+			ContentURL: testMusicDir + "/travels-with-jack-01.mp3", EncodingFormat: "audio/mpeg",
+			ByArtist: []Agent{{Type: "Organization", Name: "ZBS"}}},
+		{SchemaType: "MusicRecording", Name: "143 (Kelly's Song)", InAlbum: "Peace Love Ukulele",
+			ContentURL: testMusicDir + "/peace-love-ukulele-01.mp3", EncodingFormat: "audio/mpeg",
+			ByArtist: []Agent{{Type: "Person", Name: "Jake Shimabukuro"}}},
+	}
+	for _, info := range infos {
+		if _, err := col.Create(info); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+	}
+
+	// No track is tagged in_album exactly "Travel" — FTS finds nothing, and
+	// since the whole query is field-scoped, fuzzy fallback must not kick in
+	// and match "Travels with Jack" (edit distance 1).
+	results, err := col.SearchAudioFiles(`album:"Travel"`)
+	if err != nil {
+		t.Fatalf(`SearchAudioFiles(album:"Travel"): %v`, err)
+	}
+	if len(results) != 0 {
+		t.Errorf(`album:"Travel" got %d results, want 0 (fuzzy fallback must not run for field-scoped queries); got %+v`, len(results), results)
+	}
+
+	// A free-text (unscoped) query for the same misspelling should still get
+	// fuzzy tolerance, since the user isn't selecting a known catalog entry.
+	fuzzy, err := col.SearchAudioFiles("Travel")
+	if err != nil {
+		t.Fatalf("SearchAudioFiles(Travel): %v", err)
+	}
+	if len(fuzzy) == 0 {
+		t.Errorf("unscoped \"Travel\" got 0 results, want fuzzy match against \"Travels with Jack\"")
+	}
 }
 
 func TestParseQuery(t *testing.T) {
