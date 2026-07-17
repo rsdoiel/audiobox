@@ -6,6 +6,7 @@ require (
 	github.com/dhowden/tag v0.0.0-20240417053706-3d75831295e8
 	github.com/google/uuid v1.6.0
 	github.com/gopxl/beep/v2 v2.1.1
+	github.com/rsdoiel/opml v0.0.10
 	github.com/rsdoiel/termlib v0.0.5
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.49.1

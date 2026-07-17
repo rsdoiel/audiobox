@@ -214,3 +214,73 @@ Deno.test("audioUrl - works with empty baseUrl (same-origin)", () => {
   const api = new AudioInfoAPI();
   assertEquals(api.audioUrl("xyz"), "/api/audio/xyz");
 });
+
+Deno.test("opmlExportUrl - constructs URL without fetch", () => {
+  const api = new AudioInfoAPI("http://localhost:8010");
+  assertEquals(
+    api.opmlExportUrl("550e8400-e29b-41d4-a716-446655440000"),
+    "http://localhost:8010/api/playlists/550e8400-e29b-41d4-a716-446655440000/opml",
+  );
+});
+
+Deno.test("importPlaylistOPML - posts multipart form with file and optional name", async () => {
+  let capturedUrl = "";
+  let capturedInit: RequestInit | undefined;
+  globalThis.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+    capturedUrl = String(input);
+    capturedInit = init;
+    return Promise.resolve(
+      new Response(
+        JSON.stringify({ id: "x", name: "My Mix", trackCount: 1, imported: 1, skipped: 0 }),
+        { status: 201 },
+      ),
+    );
+  };
+  try {
+    const api = new AudioInfoAPI("http://localhost:8010");
+    const file = new File(["<opml></opml>"], "playlist.opml", { type: "text/x-opml+xml" });
+    const result = await api.importPlaylistOPML(file, "My Mix");
+    assertEquals(capturedUrl, "http://localhost:8010/api/playlists/import-opml");
+    assertEquals(capturedInit?.method, "POST");
+    const form = capturedInit?.body as FormData;
+    assertEquals(form.get("file") instanceof File, true);
+    assertEquals(form.get("name"), "My Mix");
+    assertEquals(result.imported, 1);
+    assertEquals(result.name, "My Mix");
+  } finally {
+    restoreFetch();
+  }
+});
+
+Deno.test("importPlaylistOPML - omits name field when not provided", async () => {
+  let capturedInit: RequestInit | undefined;
+  globalThis.fetch = (_input: RequestInfo | URL, init?: RequestInit) => {
+    capturedInit = init;
+    return Promise.resolve(
+      new Response(
+        JSON.stringify({ id: "x", name: "Imported Playlist", trackCount: 0, imported: 0, skipped: 0 }),
+        { status: 201 },
+      ),
+    );
+  };
+  try {
+    const api = new AudioInfoAPI();
+    const file = new File(["<opml></opml>"], "playlist.opml");
+    await api.importPlaylistOPML(file);
+    const form = capturedInit?.body as FormData;
+    assertEquals(form.get("name"), null);
+  } finally {
+    restoreFetch();
+  }
+});
+
+Deno.test("importPlaylistOPML - throws on error response", async () => {
+  mockFetch({ error: "bad opml" }, 400);
+  try {
+    const api = new AudioInfoAPI();
+    const file = new File(["not xml"], "bad.opml");
+    await assertRejects(() => api.importPlaylistOPML(file), Error, "bad opml");
+  } finally {
+    restoreFetch();
+  }
+});

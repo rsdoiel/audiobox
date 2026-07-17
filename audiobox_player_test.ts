@@ -342,3 +342,16 @@ Deno.test("PLAYER_TEMPLATE - has shuffle button disabled by default", () => {
   assertEquals(btn !== null, true);
   assertEquals(btn?.hasAttribute("disabled"), true);
 });
+
+Deno.test("PLAYER_TEMPLATE - has an OPML playlist import control (hidden file input behind a button)", () => {
+  const doc = new DOMParser().parseFromString(
+    `<html><body>${PLAYER_TEMPLATE}</body></html>`,
+    "text/html",
+  )!;
+  const btn = doc.querySelector(".import-opml-btn");
+  const input = doc.querySelector<HTMLInputElement>(".opml-file-input");
+  assertEquals(btn !== null, true);
+  assertEquals(input !== null, true);
+  assertEquals(input?.getAttribute("type"), "file");
+  assertEquals(input?.hasAttribute("hidden"), true);
+});

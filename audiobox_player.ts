@@ -293,6 +293,7 @@ const STYLES = `
   flex-shrink: 0; padding: 2px 6px; border: 1px solid #ccc;
   border-radius: 3px; background: #fff; color: #666;
   cursor: pointer; font-size: 14px; line-height: 1.2;
+  display: inline-block; text-decoration: none; box-sizing: border-box;
 }
 .row-add-btn:hover { background: #e8f0fe; border-color: #4a90d9; color: #1a73e8; }
 .row-remove-btn {
@@ -522,6 +523,11 @@ export const PLAYER_TEMPLATE = `
     <div class="library-row">
       <button class="lib-btn share-btn">Share</button>
       <span class="lib-status share-status"></span>
+    </div>
+    <div class="library-row">
+      <button class="lib-btn import-opml-btn">Import Playlist (OPML)</button>
+      <input type="file" class="opml-file-input" accept=".opml,.xml,text/x-opml+xml,application/xml" hidden />
+      <span class="lib-status opml-import-status"></span>
     </div>
   </div>
 </div>
@@ -1019,6 +1025,7 @@ export class AudioInfoPlayer extends _Base {
         `<div class="list-item-sub">${pl.trackCount} track${pl.trackCount !== 1 ? "s" : ""}</div>` +
         `</div>` +
         `<button class="row-add-btn" title="Load playlist into queue" data-playlist-load="${this._escAttr(pl.id)}">▶</button>` +
+        `<a class="row-add-btn" title="Export as OPML" href="${this._escAttr(this.api.opmlExportUrl(pl.id))}" download="${this._escAttr(pl.name)}.opml">⇩</a>` +
         `<button class="row-remove-btn" title="Delete playlist" data-playlist-delete="${this._escAttr(pl.id)}">✕</button>` +
         `</div>`
       ).join(""),
@@ -1507,6 +1514,13 @@ export class AudioInfoPlayer extends _Base {
       }
     });
 
+    // Import playlist (OPML) — the visible button just opens the hidden file
+    // picker; the actual upload happens on the input's change event.
+    const opmlFileInput = this.qs<HTMLInputElement>(".opml-file-input");
+    const opmlStatus = this.qs<HTMLElement>(".opml-import-status");
+    this.qs(".import-opml-btn").addEventListener("click", () => opmlFileInput.click());
+    opmlFileInput.addEventListener("change", () => this._importPlaylistOPML(opmlFileInput, opmlStatus));
+
     // Shutdown
     this.qs(".shutdown-btn").addEventListener("click", () => this._requestShutdown());
   }
@@ -1823,6 +1837,29 @@ export class AudioInfoPlayer extends _Base {
       title.textContent = prev;
       console.warn("save playlist:", String(e));
       saveBtn.disabled = false;
+    }
+  }
+
+  /** _importPlaylistOPML uploads the file selected via the Import Playlist
+   * (OPML) file picker, creates a new playlist from it, reports how many
+   * tracks matched vs. were skipped, and refreshes the Playlists tab when
+   * it's the active one.
+   */
+  private async _importPlaylistOPML(input: HTMLInputElement, status: HTMLElement): Promise<void> {
+    const file = input.files?.[0];
+    input.value = ""; // allow re-selecting the same file later
+    if (!file) return;
+    status.className = "lib-status";
+    status.textContent = "Importing…";
+    try {
+      const result = await this.api.importPlaylistOPML(file);
+      status.className = "lib-status ok";
+      status.textContent = `Imported "${result.name}": ${result.imported} track${result.imported !== 1 ? "s" : ""}` +
+        (result.skipped > 0 ? `, ${result.skipped} not found` : "");
+      if (this.currentBrowseTab === "playlists") this._loadTab("playlists");
+    } catch (e) {
+      status.className = "lib-status error";
+      status.textContent = String(e);
     }
   }
 

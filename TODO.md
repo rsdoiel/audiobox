@@ -74,10 +74,10 @@ audiobox: warning: could not read tags from /Users/rsdoiel/Audio/Music/Albums/Pe
 ## Next
 
 - [ ] It would be nice to build playlists based on artist name, date of first release (example 1965 to 1975 music)
-- [ ] There needs to be a means of importing and exporting a playlist as OPML files
+- [x] There needs to be a means of importing and exporting a playlist as OPML files — GET /api/playlists/{id}/opml downloads a playlist as OPML 2.0; POST /api/playlists/import-opml uploads one and creates a new playlist. Each track becomes one &lt;outline&gt; (text=title, url=content_url, category=artist, description=album); import matches outlines back to tracks by content_url and reports imported/skipped counts for entries that no longer match a file in this collection. Web UI: "Export" (⇩) link per playlist row, "Import Playlist (OPML)" button in the Library panel. Uses github.com/rsdoiel/opml.
 - [ ] An A-Z list jump option or filter needs to be available for Albums, Artists and Titles
 - [ ] Sort order for Albums and Titles should use the librarian style ordering where words like "the" and "a" are ignored but still shown in the result, "The Dave Mathews Band" would be sorted as "Dave Mathews Band, The" so it shows up in the "D" list not "T" list
-- [ ] Use an OPML file to import/export playlists
+- [x] Use an OPML file to import/export playlists — duplicate of the bullet above; see there.
 - [ ] Revise shuffle constraints, if an audio file is playing it and a user press shuffle for the queue it doesn't change that it is playing or the onces that have played. If no audio is playing and I press shuffle for the queue then the whole queue is shuffled and the selected audio file is set to the new top of list.
 - [ ] There needs to a way to explude specific folders from a playlist. 
 - [ ] Adding content to the queue is done by pressing the "+" (add to queue) button only

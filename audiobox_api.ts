@@ -97,6 +97,15 @@ export interface PlaylistInfo {
   created: string;
 }
 
+/** PlaylistImportResult is returned by POST /api/playlists/import-opml. */
+export interface PlaylistImportResult {
+  id: string;
+  name: string;
+  trackCount: number;
+  imported: number;
+  skipped: number;
+}
+
 /** ScanStarted is returned when POST /api/scan or POST /api/sweep accepts the request. */
 export interface ScanStarted {
   status: string;
@@ -567,6 +576,58 @@ export class AudioInfoAPI {
       throw new Error(body.error ?? resp.statusText);
     }
     return resp.json() as Promise<{ status: string; id: string }>;
+  }
+
+  /** opmlExportUrl returns the download URL for a playlist's OPML export.
+   * No network request is made; the server sets a Content-Disposition header
+   * so navigating to this URL (e.g. via an <a download> element) downloads
+   * the file directly.
+   *
+   * Parameters:
+   *   id (string) — UUID of the playlist to export
+   *
+   * Returns:
+   *   string — URL suitable for a download link
+   *
+   * Example:
+   *   link.href = api.opmlExportUrl("550e8400-e29b-41d4-a716-446655440000");
+   */
+  opmlExportUrl(id: string): string {
+    return `${this.baseUrl}/api/playlists/${encodeURIComponent(id)}/opml`;
+  }
+
+  /** importPlaylistOPML uploads an OPML file and creates a new playlist from it.
+   * Each outline is matched back to a track in this collection by its url
+   * attribute (content_url); unmatched entries are counted in the result
+   * rather than causing the import to fail.
+   *
+   * Parameters:
+   *   file (File)            — the OPML file to import
+   *   name (string, optional) — playlist name override; when omitted, the
+   *                             OPML document's own title is used
+   *
+   * Returns:
+   *   Promise<PlaylistImportResult> — the created playlist's id/name and match counts
+   *
+   * Example:
+   *   const result = await api.importPlaylistOPML(file);
+   *   console.log(`${result.imported} imported, ${result.skipped} skipped`);
+   */
+  async importPlaylistOPML(file: File, name?: string): Promise<PlaylistImportResult> {
+    const form = new FormData();
+    form.set("file", file);
+    if (name) form.set("name", name);
+    const resp = await fetch(this.baseUrl + "/api/playlists/import-opml", {
+      method: "POST",
+      body: form,
+    });
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => ({ error: resp.statusText })) as {
+        error?: string;
+      };
+      throw new Error(body.error ?? resp.statusText);
+    }
+    return resp.json() as Promise<PlaylistImportResult>;
   }
 
   /** audioUrl returns the streaming URL for the audio file with the given UUID.

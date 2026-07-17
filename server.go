@@ -5,6 +5,7 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"net"
@@ -158,6 +159,8 @@ func (c *Collection) Serve(logger *log.Logger) error {
 	mux.HandleFunc("POST /api/playlists", c.handleSavePlaylist(logger))
 	mux.HandleFunc("GET /api/playlists/{id}", c.handleLoadPlaylist(logger))
 	mux.HandleFunc("DELETE /api/playlists/{id}", c.handleDeletePlaylist(logger))
+	mux.HandleFunc("GET /api/playlists/{id}/opml", c.handleExportPlaylistOPML(logger))
+	mux.HandleFunc("POST /api/playlists/import-opml", c.handleImportPlaylistOPML(logger))
 
 	if c.cfg.Htdocs != "" {
 		mux.Handle("/", http.FileServer(http.Dir(c.cfg.Htdocs)))
@@ -563,6 +566,80 @@ func (c *Collection) handleDeletePlaylist(logger *log.Logger) http.HandlerFunc {
 	}
 }
 
+func (c *Collection) handleExportPlaylistOPML(logger *log.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		data, err := c.ExportPlaylistOPML(id)
+		if err != nil {
+			if strings.Contains(err.Error(), "no rows") {
+				writeJSONError(w, http.StatusNotFound, "playlist not found")
+				return
+			}
+			logger.Printf("export playlist %s: %v", id, err)
+			writeJSONError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		name, _ := c.playlistName(id)
+		w.Header().Set("Content-Type", "text/x-opml+xml; charset=utf-8")
+		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.opml"`, sanitizeFilename(name)))
+		w.Write(data) //nolint:errcheck
+	}
+}
+
+func (c *Collection) handleImportPlaylistOPML(logger *log.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseMultipartForm(10 << 20); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "expected multipart/form-data with a file field")
+			return
+		}
+		file, _, err := r.FormFile("file")
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, "file field required")
+			return
+		}
+		defer file.Close()
+		data, err := io.ReadAll(file)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, "reading uploaded file: "+err.Error())
+			return
+		}
+		result, err := c.ImportPlaylistOPML(data, r.FormValue("name"))
+		if err != nil {
+			logger.Printf("import playlist OPML: %v", err)
+			writeJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		w.WriteHeader(http.StatusCreated)
+		writeJSON(w, map[string]any{
+			"id":         result.ID,
+			"name":       result.Name,
+			"trackCount": result.Imported,
+			"imported":   result.Imported,
+			"skipped":    result.Skipped,
+		})
+	}
+}
+
+// sanitizeFilename strips characters that are unsafe in a Content-Disposition
+// filename (path separators, quotes, control characters), falling back to a
+// generic name when the result would otherwise be empty.
+func sanitizeFilename(name string) string {
+	var b strings.Builder
+	for _, r := range name {
+		switch {
+		case r == '/' || r == '\\' || r == '"' || r < 0x20:
+			b.WriteRune('-')
+		default:
+			b.WriteRune(r)
+		}
+	}
+	s := strings.TrimSpace(b.String())
+	if s == "" {
+		return "playlist"
+	}
+	return s
+}
+
 func (c *Collection) handleSearch(logger *log.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query().Get("q")
@@ -865,11 +942,18 @@ sharing changes. POST endpoints are blocked (403) for non-loopback clients.
 ## Playlists
 
 ` + "```" + `
-GET    /api/playlists      — []PlaylistInfo (id, name, trackCount, created)
-POST   /api/playlists      — body: {"name":"…","trackIds":["uuid",…]}; returns {status, id}
-GET    /api/playlists/{id} — []AudioInfo for the playlist's tracks in order
-DELETE /api/playlists/{id} — remove playlist; 404 when not found
+GET    /api/playlists              — []PlaylistInfo (id, name, trackCount, created)
+POST   /api/playlists              — body: {"name":"…","trackIds":["uuid",…]}; returns {status, id}
+GET    /api/playlists/{id}         — []AudioInfo for the playlist's tracks in order
+DELETE /api/playlists/{id}         — remove playlist; 404 when not found
+GET    /api/playlists/{id}/opml    — download the playlist as an OPML 2.0 file
+POST   /api/playlists/import-opml  — multipart/form-data: "file" (OPML), optional "name" override;
+                                      returns {id, name, trackCount, imported, skipped}
 ` + "```" + `
+
+Each OPML <outline> is matched back to a track by its url attribute against content_url
+(forward-slash normalized); entries with no url, or whose url matches no track in this
+collection, are skipped and counted in "skipped" rather than failing the import.
 
 POST and DELETE are blocked (403) for non-loopback clients in share mode.
 
