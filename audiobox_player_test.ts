@@ -10,7 +10,9 @@ import {
   formatDuration,
   isFieldScopedQuery,
   jumpLetter,
+  jumpLetters,
   librarianSortKey,
+  literalJumpLetter,
   parseDurationSecs,
   PLAYER_TEMPLATE,
   renderJumpBar,
@@ -275,6 +277,21 @@ Deno.test("jumpLetter - non-alphabetic sort keys bucket under #", () => {
   assertEquals(jumpLetter(""), "#");
 });
 
+Deno.test("literalJumpLetter - uses the name's first letter as-written, articles included", () => {
+  assertEquals(literalJumpLetter("The Dave Matthews Band"), "T");
+  assertEquals(literalJumpLetter("Eagles"), "E");
+  assertEquals(literalJumpLetter("3 Doors Down"), "#");
+});
+
+Deno.test("jumpLetters - returns both the sorted and literal letters when they differ", () => {
+  assertEquals(jumpLetters("The Dave Matthews Band"), ["D", "T"]);
+});
+
+Deno.test("jumpLetters - returns a single letter when sorted and literal agree", () => {
+  assertEquals(jumpLetters("Eagles"), ["E"]);
+  assertEquals(jumpLetters("3 Doors Down"), ["#"]);
+});
+
 Deno.test("renderJumpBar - enables only letters present in the given set", () => {
   const doc = new DOMParser().parseFromString(
     `<html><body>${renderJumpBar(new Set(["D", "E"]))}</body></html>`,
@@ -292,50 +309,53 @@ Deno.test("renderJumpBar - enables only letters present in the given set", () =>
 
 // ---------------------------------------------------------------------------
 // shuffleQueue — TODO.md: shuffle must never move the currently-playing
-// track or anything already played; when nothing is currently selected the
-// whole queue shuffles and the new top track becomes selected (but not
-// auto-played).
+// track or anything already played. But "currently playing" means playback
+// has actually started (preserveCurrent) — a queue that's freshly built and
+// primed to index 0 but never actually played must be fully shuffleable
+// (including whatever sits at index 0), so building a queue and shuffling
+// it doesn't always leave the same track stuck at the front.
 // ---------------------------------------------------------------------------
 
-Deno.test("shuffleQueue - preserves the current track and everything already played", () => {
+Deno.test("shuffleQueue - preserveCurrent=true preserves the current track and everything already played", () => {
   const queue = ["a", "b", "c", "d", "e"];
   // currentIndex 1 ("b") — "a" and "b" must never move.
-  const result = shuffleQueue(queue, 1);
-  assertEquals(result.queue[0], "a");
-  assertEquals(result.queue[1], "b");
-  assertEquals(result.currentIndex, 1);
+  const result = shuffleQueue(queue, 1, true);
+  assertEquals(result[0], "a");
+  assertEquals(result[1], "b");
   // The remaining tail must be exactly the same set of tracks, just reordered.
-  assertEquals([...result.queue.slice(2)].sort(), ["c", "d", "e"]);
-  assertEquals(result.queue.length, 5);
+  assertEquals([...result.slice(2)].sort(), ["c", "d", "e"]);
+  assertEquals(result.length, 5);
 });
 
 Deno.test("shuffleQueue - deterministic permutation with an injected rng", () => {
   const queue = ["x0", "x1", "x2", "x3"];
-  // currentIndex -1: whole queue is the shuffle pool. rng() => 0 makes every
-  // Fisher-Yates swap target index 0, producing a fixed, checkable result.
-  const result = shuffleQueue(queue, -1, () => 0);
-  assertEquals(result.queue, ["x1", "x2", "x3", "x0"]);
+  // preserveCurrent=false: whole queue is the shuffle pool. rng() => 0 makes
+  // every Fisher-Yates swap target index 0, producing a fixed, checkable result.
+  const result = shuffleQueue(queue, -1, false, () => 0);
+  assertEquals(result, ["x1", "x2", "x3", "x0"]);
 });
 
-Deno.test("shuffleQueue - nothing selected (currentIndex -1) shuffles everything and selects the new top track", () => {
+Deno.test("shuffleQueue - preserveCurrent=false shuffles everything, including whatever sits at currentIndex", () => {
+  // This is the "queue was built and primed to index 0 but playback never
+  // started" case: the track at index 0 must be just as shuffleable as the
+  // rest, not pinned in place the way an actively-playing track would be.
+  // Same queue, same currentIndex, same rng — only preserveCurrent differs.
   const queue = ["a", "b", "c"];
-  const result = shuffleQueue(queue, -1);
-  assertEquals(result.currentIndex, 0);
-  assertEquals([...result.queue].sort(), ["a", "b", "c"]);
-  assertEquals(result.queue.length, 3);
+  const shuffled = shuffleQueue(queue, 0, false, () => 0);
+  const pinned = shuffleQueue(queue, 0, true, () => 0);
+  assertEquals(shuffled, ["b", "c", "a"]); // "a" moved away from index 0
+  assertEquals(pinned, ["a", "c", "b"]); // "a" stayed pinned at index 0
 });
 
-Deno.test("shuffleQueue - nothing selected and an empty queue stays unselected, no crash", () => {
-  const result = shuffleQueue([], -1);
-  assertEquals(result.queue, []);
-  assertEquals(result.currentIndex, -1);
+Deno.test("shuffleQueue - empty queue does not crash", () => {
+  assertEquals(shuffleQueue([], -1, false), []);
+  assertEquals(shuffleQueue([], -1, true), []);
 });
 
-Deno.test("shuffleQueue - current track at the end of the queue (nothing left to shuffle) is a no-op", () => {
+Deno.test("shuffleQueue - preserveCurrent=true with current track at the end of the queue is a no-op", () => {
   const queue = ["a", "b", "c"];
-  const result = shuffleQueue(queue, 2);
-  assertEquals(result.queue, ["a", "b", "c"]);
-  assertEquals(result.currentIndex, 2);
+  const result = shuffleQueue(queue, 2, true);
+  assertEquals(result, ["a", "b", "c"]);
 });
 
 // ---------------------------------------------------------------------------

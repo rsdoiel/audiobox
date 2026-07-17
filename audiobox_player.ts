@@ -236,6 +236,49 @@ export function jumpLetter(name: string): string {
   return c >= "A" && c <= "Z" ? c : "#";
 }
 
+/** literalJumpLetter returns the uppercased first character of name exactly
+ * as written — no article stripped — or "#" when it doesn't start with an
+ * ASCII letter. Distinct from jumpLetter (which uses the librarian sort
+ * key); used together in jumpLetters so an entry is reachable from either
+ * its filed-under letter or its literal first word.
+ *
+ * Parameters:
+ *   name (string) — an album, artist, or title
+ *
+ * Returns:
+ *   string — a single character, "A"-"Z" or "#"
+ *
+ * Example:
+ *   literalJumpLetter("The Dave Matthews Band") // "T"
+ */
+export function literalJumpLetter(name: string): string {
+  const c = name.trim().charAt(0).toUpperCase();
+  return c >= "A" && c <= "Z" ? c : "#";
+}
+
+/** jumpLetters returns every A-Z jump bar bucket a name should be reachable
+ * from: its librarian sort-key letter (jumpLetter) and, when it differs,
+ * its literal first-word letter (literalJumpLetter). Covers the case where
+ * a user isn't sure whether an entry was filed under its literal first word
+ * or under a stripped-article key — e.g. "The Dave Matthews Band" is
+ * reachable from both "D" and "T".
+ *
+ * Parameters:
+ *   name (string) — an album, artist, or title
+ *
+ * Returns:
+ *   string[] — one letter, or two when the sorted and literal letters differ
+ *
+ * Example:
+ *   jumpLetters("The Dave Matthews Band") // ["D", "T"]
+ *   jumpLetters("Eagles")                 // ["E"]
+ */
+export function jumpLetters(name: string): string[] {
+  const sorted = jumpLetter(name);
+  const literal = literalJumpLetter(name);
+  return sorted === literal ? [sorted] : [sorted, literal];
+}
+
 /** renderJumpBar builds an A-Z (+ "#") jump bar, enabling only the letters
  * present in `letters` — buckets with no matching row in the currently
  * rendered list render disabled rather than as a dead click.
@@ -260,42 +303,44 @@ export function renderJumpBar(letters: Set<string>): string {
     `</div>`;
 }
 
-/** shuffleQueue applies a Fisher-Yates shuffle to a playback queue while
- * preserving playback constraints: the currently-selected track and
- * everything before it (already played) are never moved; only the unplayed
- * tail (indices after currentIndex) is shuffled. When nothing is currently
- * selected (currentIndex -1), the entire queue is treated as the shuffle
- * pool and the new currentIndex becomes 0 — the caller is expected to prime
- * that track as selected-but-not-playing, the same way adding to an empty
- * queue does.
+/** shuffleQueue applies a Fisher-Yates shuffle to a playback queue. When
+ * preserveCurrent is true, the track at currentIndex and everything before
+ * it (already played) are never moved — only the unplayed tail is shuffled.
+ * When preserveCurrent is false (nothing has actually started playing yet —
+ * a queue that's merely been built and primed, but never had play() called
+ * on it, has no "played history" worth protecting), the entire queue is the
+ * shuffle pool, including whatever sits at currentIndex — so building a
+ * queue and shuffling it doesn't leave the same track stuck at the front
+ * every time. currentIndex itself is left untouched; the caller decides
+ * whether/how to re-prime the player from the new order at that index.
  *
  * Parameters:
- *   queue (T[])            — the queue to shuffle
- *   currentIndex (number)  — index of the currently playing/selected track, or -1
- *   rng (() => number)     — random source in [0, 1); defaults to Math.random,
- *                             override for deterministic tests
+ *   queue (T[])              — the queue to shuffle
+ *   currentIndex (number)    — index of the currently playing/selected track, or -1
+ *   preserveCurrent (boolean) — true once playback has actually started for this queue
+ *   rng (() => number)       — random source in [0, 1); defaults to Math.random,
+ *                               override for deterministic tests
  *
  * Returns:
- *   {queue: T[], currentIndex: number} — the shuffled queue and the resulting current index
+ *   T[] — the shuffled queue
  *
  * Example:
- *   const { queue, currentIndex } = shuffleQueue(this.queue, this.currentIndex);
+ *   this.queue = shuffleQueue(this.queue, this.currentIndex, this.hasPlaybackStarted);
  */
 export function shuffleQueue<T>(
   queue: T[],
   currentIndex: number,
+  preserveCurrent: boolean,
   rng: () => number = Math.random,
-): { queue: T[]; currentIndex: number } {
-  const splitAt = currentIndex + 1; // -1 + 1 = 0 when nothing is selected
+): T[] {
+  const splitAt = preserveCurrent && currentIndex >= 0 ? currentIndex + 1 : 0;
   const played = queue.slice(0, splitAt);
   const remaining = queue.slice(splitAt);
   for (let i = remaining.length - 1; i > 0; i--) {
     const j = Math.floor(rng() * (i + 1));
     [remaining[i], remaining[j]] = [remaining[j], remaining[i]];
   }
-  const shuffled = [...played, ...remaining];
-  const newIndex = currentIndex === -1 && shuffled.length > 0 ? 0 : currentIndex;
-  return { queue: shuffled, currentIndex: newIndex };
+  return [...played, ...remaining];
 }
 
 // ---------------------------------------------------------------------------
@@ -408,6 +453,7 @@ const STYLES = `
 .az-bar {
   display: flex; flex-wrap: wrap; gap: 2px; padding: 4px 8px;
   border-bottom: 1px solid #e8e8e8; background: #fafafa;
+  position: sticky; top: 0; z-index: 1;
 }
 .az-btn {
   flex: 0 0 auto; padding: 1px 4px; min-width: 16px; border: none;
@@ -686,6 +732,14 @@ export class AudioInfoPlayer extends _Base {
   private audioEl!: HTMLAudioElement;
   private queue: AudioInfo[] = [];
   private currentIndex = -1;
+  /** True once playback has actually started (play() called) for the
+   * current queue — as opposed to merely being primed/selected. Building a
+   * queue primes currentIndex to 0 without playing anything, so shuffle
+   * treats that as "nothing played yet" and reshuffles the whole queue
+   * rather than pinning whatever happens to be at index 0. Reset whenever
+   * a fresh queue starts (see _addToQueue's wasEmpty branch).
+   */
+  private hasPlaybackStarted = false;
   private drilldownTracks: AudioInfo[] = [];
   private drilldownLabel = "";
   private currentBrowseTab = "albums";
@@ -1062,13 +1116,13 @@ export class AudioInfoPlayer extends _Base {
       this._setListContent('<div class="list-empty">No items found</div>');
       return;
     }
-    const jumpBar = renderJumpBar(new Set(albums.map((a) => jumpLetter(a.displayName))));
+    const jumpBar = renderJumpBar(new Set(albums.flatMap((a) => jumpLetters(a.displayName))));
     this._setListContent(
       jumpBar +
       albums
         .map(
           (a) =>
-            `<div class="list-item" data-jump-letter="${jumpLetter(a.displayName)}" data-browse-tab="albums" data-browse-item="${this._escAttr(a.dir)}" data-browse-label="${this._escAttr(a.displayName)}">` +
+            `<div class="list-item" data-jump-letter="${jumpLetters(a.displayName).join(" ")}" data-browse-tab="albums" data-browse-item="${this._escAttr(a.dir)}" data-browse-label="${this._escAttr(a.displayName)}">` +
             `<div class="list-item-main"><div class="list-item-title">${this._escHtml(a.displayName)}</div></div>` +
             `<button class="row-add-btn" title="Add to queue" data-add-tab="albums" data-add-item="${this._escAttr(a.dir)}">⊕</button>` +
             `</div>`,
@@ -1082,13 +1136,13 @@ export class AudioInfoPlayer extends _Base {
       this._setListContent('<div class="list-empty">No items found</div>');
       return;
     }
-    const jumpBar = renderJumpBar(new Set(items.map((item) => jumpLetter(item))));
+    const jumpBar = renderJumpBar(new Set(items.flatMap((item) => jumpLetters(item))));
     this._setListContent(
       jumpBar +
       items
         .map(
           (item) =>
-            `<div class="list-item" data-jump-letter="${jumpLetter(item)}" data-browse-tab="${this._escAttr(tab)}" data-browse-item="${this._escAttr(item)}">` +
+            `<div class="list-item" data-jump-letter="${jumpLetters(item).join(" ")}" data-browse-tab="${this._escAttr(tab)}" data-browse-item="${this._escAttr(item)}">` +
             `<div class="list-item-main"><div class="list-item-title">${this._escHtml(item)}</div></div>` +
             `<button class="row-add-btn" title="Add to queue" data-add-tab="${this._escAttr(tab)}" data-add-item="${this._escAttr(item)}">⊕</button>` +
             `</div>`,
@@ -1243,6 +1297,7 @@ export class AudioInfoPlayer extends _Base {
     const wasEmpty = this.queue.length === 0 && this.currentIndex < 0;
     this.queue = [...this.queue, ...tracks];
     if (wasEmpty) {
+      this.hasPlaybackStarted = false;
       this.currentIndex = 0;
       this.audioEl.src = this.api.audioUrl(this.queue[0].ID);
       this._showNowPlaying(this.queue[0]);
@@ -1251,19 +1306,19 @@ export class AudioInfoPlayer extends _Base {
     this._updateQueuePanel();
   }
 
-  /** _shuffleQueue applies a Fisher-Yates shuffle to all unplayed tracks in
-   * the queue (those after currentIndex). The currently-playing track and any
-   * already-played tracks are left in place. If nothing is currently selected
-   * (currentIndex -1), the entire queue is shuffled and the new top track is
-   * primed as selected — src loaded and shown as now-playing — but not
-   * auto-played, the same way adding to an empty queue behaves.
+  /** _shuffleQueue applies a Fisher-Yates shuffle to the queue. Once
+   * playback has actually started (hasPlaybackStarted), the currently
+   * playing track and everything already played are left in place and only
+   * the unplayed tail is shuffled. Before playback has started — a queue
+   * that's been built and primed but never played — the entire queue is
+   * shuffled, including whatever sits at index 0, and the (possibly new)
+   * top track is re-primed as selected but not auto-played.
    */
   private _shuffleQueue(): void {
-    const wasUnset = this.currentIndex === -1;
-    const result = shuffleQueue(this.queue, this.currentIndex);
-    this.queue = result.queue;
-    this.currentIndex = result.currentIndex;
-    if (wasUnset && this.queue.length > 0) {
+    const preserveCurrent = this.hasPlaybackStarted;
+    this.queue = shuffleQueue(this.queue, this.currentIndex, preserveCurrent);
+    if (!preserveCurrent && this.queue.length > 0) {
+      this.currentIndex = 0;
       this.audioEl.src = this.api.audioUrl(this.queue[0].ID);
       this._showNowPlaying(this.queue[0]);
       this._refreshPlayState(false);
@@ -1334,7 +1389,10 @@ export class AudioInfoPlayer extends _Base {
   // ---- audio event binding ------------------------------------------------
 
   private _bindAudio(): void {
-    this.audioEl.addEventListener("play", () => this._refreshPlayState(true));
+    this.audioEl.addEventListener("play", () => {
+      this.hasPlaybackStarted = true;
+      this._refreshPlayState(true);
+    });
     this.audioEl.addEventListener("pause", () => this._refreshPlayState(false));
     this.audioEl.addEventListener("ended", () => {
       this.queue.splice(this.currentIndex, 1);
@@ -1383,8 +1441,19 @@ export class AudioInfoPlayer extends _Base {
       if (jumpBtn) {
         if (jumpBtn.disabled) return;
         const letter = jumpBtn.dataset.jumpTo!;
-        const target = this.qs(`.list-panel [data-jump-letter="${letter}"]`);
-        target?.scrollIntoView({ block: "start" });
+        const panel = this.qs<HTMLElement>(".list-panel");
+        // ~= matches a whitespace-separated token list, since a row may be
+        // reachable from two letters (its sorted key and its literal first word).
+        const target = panel.querySelector<HTMLElement>(`[data-jump-letter~="${letter}"]`);
+        if (target) {
+          // The jump bar is sticky, so a plain scrollIntoView would land the
+          // target right underneath it. Measure the bar's actual height
+          // (it can wrap to two lines in a narrow panel) and offset by that,
+          // rather than guessing a fixed margin.
+          const azBar = panel.querySelector<HTMLElement>(".az-bar");
+          const stickyOffset = azBar?.getBoundingClientRect().height ?? 0;
+          panel.scrollTop = target.offsetTop - stickyOffset;
+        }
         return;
       }
 
