@@ -10,6 +10,63 @@
 - [ ] When I type in an artist name under the Albums list, it should return a list of albums by the Artest name, do I need to have query prefix like "artist:Shimabukuro" to do that?
 - [ ] The scan action has no visual indicator that is had completed, a progress indicator would be nice to include
 - [ ] The sweep action has no visual indicator that it has completed, a progress indicator would be nice to include
+- [ ] When I run `audiobox scan` I am seeing errors like ```MACMINI-RD:~ rsdoiel$ audiobox scan
+Scanning…
+audiobox: warning: could not read tags from /Users/rsdoiel/Audio/Music/Albums/Peace-Love-Ukulele/01 143 (Kelly's Song) 2011.wav: no tags found
+audiobox: warning: could not read tags from /Users/rsdoiel/Audio/Music/Albums/Peace-Love-Ukulele/02 Bohemian Rhapsody.wav: no tags found
+audiobox: warning: could not read tags from /Users/rsdoiel/Audio/Music/Albums/Peace-Love-Ukulele/03 Bring Your Adz.wav: no tags found
+audiobox: warning: could not read tags from /Users/rsdoiel/Audio/Music/Albums/Peace-Love-Ukulele/04 Boy Meets Girl.wav: no tags found
+audiobox: warning: could not read tags from /Users/rsdoiel/Audio/Music/Albums/Peace-Love-Ukulele/05 Go For Broke.wav: no tags found
+audiobox: warning: could not read tags from /Users/rsdoiel/Audio/Music/Albums/Peace-Love-Ukulele/06 Trapped 2010.wav: no tags found
+audiobox: warning: could not read tags from /Users/rsdoiel/Audio/Music/Albums/Peace-Love-Ukulele/07 Variation On A Dance 2010.wav: no tags found
+audiobox: warning: could not read tags from /Users/rsdoiel/Audio/Music/Albums/Peace-Love-Ukulele/08 Pianoforte 2010.wav: no tags found
+audiobox: warning: could not read tags from /Users/rsdoiel/Audio/Music/Albums/Peace-Love-Ukulele/09 Five Dollars Unleaded 2010.wav: no tags found
+audiobox: warning: could not read tags from /Users/rsdoiel/Audio/Music/Albums/Peace-Love-Ukulele/10 Ukulele Bros..wav: no tags found
+audiobox: warning: could not read tags from /Users/rsdoiel/Audio/Music/Albums/Peace-Love-Ukulele/11 Hallelujah.wav: no tags found
+audiobox: warning: could not read tags from /Users/rsdoiel/Audio/Music/Albums/Peace-Love-Ukulele/12 Bohemian Rhapsody - Live Version.wav: no tags found
+```
+- [ ] An Album's song list for ```MACMINI-RD:~ rsdoiel$ ls -1 Audio/Music/Albums/Milton-plus-Esperanza/
+01 - the music was there.mp3
+02 - Cais.mp3
+03 - Late September.mp3
+04 - Outubro.mp3
+05 - A Day in the Life.mp3
+06 - Interlude for Saci.mp3
+07 - Saci [feat. Guinga].mp3
+08 - Wings for the Thought Bird [feat. Elena Pinderhughes & Orquestra Ouro Preto].mp3
+09 - The Way You Are.mp3
+10 - Earth Song [feat. Dianne Reeves].mp3
+11 - Morro Velho [feat. Orquestra Ouro Preto].mp3
+12 - Saudade Dos Aviões Da Panair (Conversando No Bar) [feat. Lianne La Havas & Maria Gadú &.mp3
+13 - Um Vento Passou (para Paul Simon) [feat. Paul Simon].mp3
+14 - Get It By Now.mp3
+15 - outro planeta.mp3
+16 - When You Dream [feat. Carolina Shorter].mp3
+``` doesn't show up when in look for it in the individual web view for Albums, it does show up if I search by artist
+- [ ] The Album Travels, ```MACMINI-RD:~ rsdoiel$ ls -1 Audio/Music/Albums/Travels
+01 Departure Suite - part I.wav
+02 Train Ride.wav
+03 Low Rider.wav
+04 Travels.wav
+05 Interlude 1.wav
+06 Passport.wav
+07 Hi'ilawe.wav
+08 Everything Is Better With You (feat. The Side Order Band).wav
+09 Departure Suite - parts II & III.wav
+10 'Oama.wav
+11 I'll Be There.wav
+12 Haven't We Been Here Before.wav
+13 Interlude 2.wav
+14 Kawika.wav
+15 Red-Eye.wav
+16 Ichigo Ichie.wav
+17 Dinner & A Movie.wav
+18 Nada Sousou.wav
+19 Early Song.wav
+20 Tip Toe.wav
+``` is also lists content from Travels with Jack in the Web View (might be an error in the SQL or how the metadata is stored in the SQLite3 database)
+- [ ] The folder view in the web UI does not let me drill down into the folders that are inside `Music/Album`
+- [ ] The search feature should be clearer about constraints/context of search (searching by album name, searching by artist, etc).
 
 ## Next
 
