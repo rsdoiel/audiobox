@@ -6,11 +6,11 @@
 - [x] When searching for an artist need to able to queue albums in additional to individual songs — clicking an artist (or filtering Albums by artist name) now shows that artist's albums with a "+" add-to-queue button per album, resolved via exact album directory rather than tag text.
 - [x] When picking the Artist button, the albums for an artist should be shown first when drilling down to see what the Artist is associated with, albums should have the plus button tto add a whole album to queue — Artists-tab drilldown now shows albums-first (falls back to a flat track list only when a track can't be resolved to an album directory).
 - [x] When I add the "Travel" album to a playlist is pickups more than Jake Shimabukuro's "Travel" it also adds ZBS's "Travels with Jack" — root cause was two bugs: (1) field-scoped exact queries were silently falling back to Levenshtein fuzzy matching on zero results, conflating "Travel"/"Travels"; (2) Albums-tab clicks/add-to-queue resolved via tag-based search instead of the exact album directory already known from the browse list. Both fixed; see SearchAudioFiles/GetTracksByAlbumDir and the Albums-tab wiring in audiobox_player.ts.
-- [ ] When I search for Jake or Shimabukuro I am only getting back one of his albums, even when the "Artist" button was previously selected — root cause identified: `.wav` files aren't a supported tag format (dhowden/tag has no WAV support), so untagged `.wav` albums stored one level deep (`Albums/<Album>/track.wav`, no separate Artist folder) fall back to artist "Unknown" instead of the real artist. Deliberately deferred (needs a WAV RIFF/LIST-INFO chunk parser); tracked as a follow-up, not folded into this pass.
+- [x] When I search for Jake or Shimabukuro I am only getting back one of his albums, even when the "Artist" button was previously selected — root cause: `.wav` isn't a tag format dhowden/tag supports, so a `.wav` album stored one level deep (`Albums/<Album>/track.wav`, no separate Artist folder) fell back to artist "Unknown". Fixed by adding a RIFF "LIST"/"INFO" chunk parser (wavtags.go) used as a fallback metadata source for `.wav` files before the path-derived/"Unknown" fallback. Note: this recovers the artist only when the `.wav` file actually carries an IART tag in its RIFF INFO chunk — a `.wav` with no embedded metadata at all still has no way to know the artist and correctly falls back to "Unknown".
 - [x] When I type in an artist name under the Albums list, it should return a list of albums by the Artest name, do I need to have query prefix like "artist:Shimabukuro" to do that? — no prefix needed: typing plain text while the Albums tab is active now filters by album name OR artist name (matches both `album:"…"` and `artist:"…"`); an explicit field prefix (album:/artist:/title:/genre:) still works and is documented in the search box's placeholder/tooltip.
 - [x] The scan action has no visual indicator that is had completed, a progress indicator would be nice to include — already implemented (web UI shows a live elapsed-time status with completed/error styling; CLI prints "Scanning…"/"Scan complete."); verified by code inspection, no change needed.
 - [x] The sweep action has no visual indicator that it has completed, a progress indicator would be nice to include — already implemented (web UI shows live status + removed-record count; CLI prints a completion summary); verified by code inspection, no change needed.
-- [ ] When I run `audiobox scan` I am seeing errors like ```MACMINI-RD:~ rsdoiel$ audiobox scan
+- [x] When I run `audiobox scan` I am seeing errors like ```MACMINI-RD:~ rsdoiel$ audiobox scan
 Scanning…
 audiobox: warning: could not read tags from /Users/rsdoiel/Audio/Music/Albums/Peace-Love-Ukulele/01 143 (Kelly's Song) 2011.wav: no tags found
 audiobox: warning: could not read tags from /Users/rsdoiel/Audio/Music/Albums/Peace-Love-Ukulele/02 Bohemian Rhapsody.wav: no tags found
@@ -25,7 +25,7 @@ audiobox: warning: could not read tags from /Users/rsdoiel/Audio/Music/Albums/Pe
 audiobox: warning: could not read tags from /Users/rsdoiel/Audio/Music/Albums/Peace-Love-Ukulele/11 Hallelujah.wav: no tags found
 audiobox: warning: could not read tags from /Users/rsdoiel/Audio/Music/Albums/Peace-Love-Ukulele/12 Bohemian Rhapsody - Live Version.wav: no tags found
 ```
-  Root cause: `.wav` isn't a supported tag format (dhowden/tag). Same deferred WAV RIFF/LIST-INFO parsing work as the Jake Shimabukuro bug above would fix this too — one follow-up covers both.
+  Fixed for `.wav` files that carry RIFF INFO tags (same fix as the Jake Shimabukuro bug above — see wavtags.go); a genuinely untagged `.wav` still logs this warning, correctly, since there's nothing to read.
 - [x] An Album's song list for ```MACMINI-RD:~ rsdoiel$ ls -1 Audio/Music/Albums/Milton-plus-Esperanza/
 01 - the music was there.mp3
 02 - Cais.mp3
@@ -73,7 +73,6 @@ audiobox: warning: could not read tags from /Users/rsdoiel/Audio/Music/Albums/Pe
 
 ## Next
 
-- [ ] Add WAV metadata support: dhowden/tag has no WAV reader, so every `.wav` file scans with a "no tags found" warning and falls back to path-derived metadata — which loses artist attribution entirely for single-level `Albums/<Album>/track.wav` layouts (no Artist folder to fall back on). Needs a small RIFF/LIST-INFO chunk parser (IART/INAM/IPRD/ITRK) used as a fallback before the path-derived/"Unknown" fallback in ProcessAudioFile. Fixes both the Jake Shimabukuro artist-search bug and the scan warning spam above.
 - [ ] It would be nice to build playlists based on artist name, date of first release (example 1965 to 1975 music)
 - [ ] There needs to be a means of importing and exporting a playlist as OPML files
 - [ ] An A-Z list jump option or filter needs to be available for Albums, Artists and Titles

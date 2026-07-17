@@ -212,7 +212,26 @@ func (c *Collection) ProcessAudioFile(filePath string, logger *log.Logger) error
 
 	meta, err := tag.ReadFrom(f)
 	if err != nil {
-		logger.Printf("warning: could not read tags from %s: %v", filePath, err)
+		// dhowden/tag has no WAV support, so every .wav file lands here. Try
+		// recovering metadata from the file's RIFF LIST/INFO chunk instead —
+		// without it, a .wav track stored one directory level deep (no
+		// separate Artist folder to fall back on) loses artist attribution
+		// entirely.
+		wavTags, wavErr := WAVInfoTags{}, fmt.Errorf("not a wav file")
+		if strings.EqualFold(filepath.Ext(filePath), ".wav") {
+			wavTags, wavErr = readWAVInfoTags(filePath)
+		}
+		if wavErr == nil && !wavTags.IsZero() {
+			info.Name = wavTags.Title
+			info.InAlbum = wavTags.Album
+			info.Genre = wavTags.Genre
+			info.DatePublished = wavTags.Year
+			if wavTags.Artist != "" {
+				info.ByArtist = []Agent{{Type: "Person", Name: wavTags.Artist}}
+			}
+		} else {
+			logger.Printf("warning: could not read tags from %s: %v", filePath, err)
+		}
 	} else {
 		trackNum, _ := meta.Track()
 		discNum, _ := meta.Disc()
