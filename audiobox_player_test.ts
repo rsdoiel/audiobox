@@ -14,6 +14,7 @@ import {
   parseDurationSecs,
   PLAYER_TEMPLATE,
   renderJumpBar,
+  shuffleQueue,
 } from "./audiobox_player.ts";
 
 // ---------------------------------------------------------------------------
@@ -287,6 +288,54 @@ Deno.test("renderJumpBar - enables only letters present in the given set", () =>
   assertEquals(e?.hasAttribute("disabled"), false);
   assertEquals(a?.hasAttribute("disabled"), true);
   assertEquals(hash?.hasAttribute("disabled"), true);
+});
+
+// ---------------------------------------------------------------------------
+// shuffleQueue — TODO.md: shuffle must never move the currently-playing
+// track or anything already played; when nothing is currently selected the
+// whole queue shuffles and the new top track becomes selected (but not
+// auto-played).
+// ---------------------------------------------------------------------------
+
+Deno.test("shuffleQueue - preserves the current track and everything already played", () => {
+  const queue = ["a", "b", "c", "d", "e"];
+  // currentIndex 1 ("b") — "a" and "b" must never move.
+  const result = shuffleQueue(queue, 1);
+  assertEquals(result.queue[0], "a");
+  assertEquals(result.queue[1], "b");
+  assertEquals(result.currentIndex, 1);
+  // The remaining tail must be exactly the same set of tracks, just reordered.
+  assertEquals([...result.queue.slice(2)].sort(), ["c", "d", "e"]);
+  assertEquals(result.queue.length, 5);
+});
+
+Deno.test("shuffleQueue - deterministic permutation with an injected rng", () => {
+  const queue = ["x0", "x1", "x2", "x3"];
+  // currentIndex -1: whole queue is the shuffle pool. rng() => 0 makes every
+  // Fisher-Yates swap target index 0, producing a fixed, checkable result.
+  const result = shuffleQueue(queue, -1, () => 0);
+  assertEquals(result.queue, ["x1", "x2", "x3", "x0"]);
+});
+
+Deno.test("shuffleQueue - nothing selected (currentIndex -1) shuffles everything and selects the new top track", () => {
+  const queue = ["a", "b", "c"];
+  const result = shuffleQueue(queue, -1);
+  assertEquals(result.currentIndex, 0);
+  assertEquals([...result.queue].sort(), ["a", "b", "c"]);
+  assertEquals(result.queue.length, 3);
+});
+
+Deno.test("shuffleQueue - nothing selected and an empty queue stays unselected, no crash", () => {
+  const result = shuffleQueue([], -1);
+  assertEquals(result.queue, []);
+  assertEquals(result.currentIndex, -1);
+});
+
+Deno.test("shuffleQueue - current track at the end of the queue (nothing left to shuffle) is a no-op", () => {
+  const queue = ["a", "b", "c"];
+  const result = shuffleQueue(queue, 2);
+  assertEquals(result.queue, ["a", "b", "c"]);
+  assertEquals(result.currentIndex, 2);
 });
 
 // ---------------------------------------------------------------------------

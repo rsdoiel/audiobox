@@ -260,6 +260,44 @@ export function renderJumpBar(letters: Set<string>): string {
     `</div>`;
 }
 
+/** shuffleQueue applies a Fisher-Yates shuffle to a playback queue while
+ * preserving playback constraints: the currently-selected track and
+ * everything before it (already played) are never moved; only the unplayed
+ * tail (indices after currentIndex) is shuffled. When nothing is currently
+ * selected (currentIndex -1), the entire queue is treated as the shuffle
+ * pool and the new currentIndex becomes 0 — the caller is expected to prime
+ * that track as selected-but-not-playing, the same way adding to an empty
+ * queue does.
+ *
+ * Parameters:
+ *   queue (T[])            — the queue to shuffle
+ *   currentIndex (number)  — index of the currently playing/selected track, or -1
+ *   rng (() => number)     — random source in [0, 1); defaults to Math.random,
+ *                             override for deterministic tests
+ *
+ * Returns:
+ *   {queue: T[], currentIndex: number} — the shuffled queue and the resulting current index
+ *
+ * Example:
+ *   const { queue, currentIndex } = shuffleQueue(this.queue, this.currentIndex);
+ */
+export function shuffleQueue<T>(
+  queue: T[],
+  currentIndex: number,
+  rng: () => number = Math.random,
+): { queue: T[]; currentIndex: number } {
+  const splitAt = currentIndex + 1; // -1 + 1 = 0 when nothing is selected
+  const played = queue.slice(0, splitAt);
+  const remaining = queue.slice(splitAt);
+  for (let i = remaining.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [remaining[i], remaining[j]] = [remaining[j], remaining[i]];
+  }
+  const shuffled = [...played, ...remaining];
+  const newIndex = currentIndex === -1 && shuffled.length > 0 ? 0 : currentIndex;
+  return { queue: shuffled, currentIndex: newIndex };
+}
+
 // ---------------------------------------------------------------------------
 // Shadow DOM template
 // ---------------------------------------------------------------------------
@@ -1211,18 +1249,21 @@ export class AudioInfoPlayer extends _Base {
 
   /** _shuffleQueue applies a Fisher-Yates shuffle to all unplayed tracks in
    * the queue (those after currentIndex). The currently-playing track and any
-   * already-played tracks are left in place. If nothing is playing the entire
-   * queue is shuffled.
+   * already-played tracks are left in place. If nothing is currently selected
+   * (currentIndex -1), the entire queue is shuffled and the new top track is
+   * primed as selected — src loaded and shown as now-playing — but not
+   * auto-played, the same way adding to an empty queue behaves.
    */
   private _shuffleQueue(): void {
-    const splitAt = this.currentIndex + 1;
-    const played = this.queue.slice(0, splitAt);
-    const remaining = this.queue.slice(splitAt);
-    for (let i = remaining.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [remaining[i], remaining[j]] = [remaining[j], remaining[i]];
+    const wasUnset = this.currentIndex === -1;
+    const result = shuffleQueue(this.queue, this.currentIndex);
+    this.queue = result.queue;
+    this.currentIndex = result.currentIndex;
+    if (wasUnset && this.queue.length > 0) {
+      this.audioEl.src = this.api.audioUrl(this.queue[0].ID);
+      this._showNowPlaying(this.queue[0]);
+      this._refreshPlayState(false);
     }
-    this.queue = [...played, ...remaining];
     this._updateQueuePanel();
   }
 
