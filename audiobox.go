@@ -1292,7 +1292,11 @@ func (c *Collection) GetAlbumEntries(excludeFolders ...string) ([]Album, error) 
 		}
 		albums = append(albums, Album{Name: r.name, DisplayName: displayName, Dir: r.dir})
 	}
-	sort.Slice(albums, func(i, j int) bool {
+	sort.SliceStable(albums, func(i, j int) bool {
+		ki, kj := librarianSortKey(albums[i].DisplayName), librarianSortKey(albums[j].DisplayName)
+		if ki != kj {
+			return ki < kj
+		}
 		return albums[i].DisplayName < albums[j].DisplayName
 	})
 	return albums, nil
@@ -1578,7 +1582,7 @@ func (c *Collection) GetArtists(excludeFolders ...string) ([]string, error) {
 	for name := range seen {
 		result = append(result, name)
 	}
-	sort.Strings(result)
+	sortStringsLibrarian(result)
 	return result, nil
 }
 
@@ -1602,7 +1606,7 @@ func (c *Collection) queryDistinctColumn(col string, excludeFolders ...string) (
 	}
 	excl, exclArgs := folderExclusionSQL(excludeFolders)
 	rows, err := c.db.Query(
-		fmt.Sprintf("SELECT DISTINCT %s FROM audio_files WHERE %s != '' AND %s IS NOT NULL%s ORDER BY %s", col, col, col, excl, col),
+		fmt.Sprintf("SELECT DISTINCT %s FROM audio_files WHERE %s != '' AND %s IS NOT NULL%s", col, col, col, excl),
 		exclArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("querying %s: %w", col, err)
@@ -1620,6 +1624,7 @@ func (c *Collection) queryDistinctColumn(col string, excludeFolders ...string) (
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterating %s rows: %w", col, err)
 	}
+	sortStringsLibrarian(items)
 	return items, nil
 }
 

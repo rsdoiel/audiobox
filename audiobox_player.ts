@@ -196,6 +196,70 @@ export function buildFolderTree(folders: FolderEntry[]): FolderTreeNode[] {
   return [...nodes.values()];
 }
 
+/** librarianSortKey mirrors audiobox.go's librarianSortKey exactly: a
+ * leading standalone "The"/"A"/"An" (followed by whitespace and at least one
+ * more character) is dropped for comparison purposes only, so "The Dave
+ * Matthews Band" sorts — and buckets in the A-Z jump bar — under "D". Must
+ * stay in sync with the server so client-side letter bucketing lines up with
+ * the server-sorted list order.
+ *
+ * Parameters:
+ *   name (string) — an album, artist, or title
+ *
+ * Returns:
+ *   string — lowercased name with any leading standalone article removed
+ *
+ * Example:
+ *   librarianSortKey("The Dave Matthews Band") // "dave matthews band"
+ */
+export function librarianSortKey(name: string): string {
+  const m = name.match(/^(the|an|a)\s+(\S.*)$/i);
+  return (m ? m[2] : name).toLowerCase();
+}
+
+/** jumpLetter returns the A-Z jump bar bucket for a name: the uppercased
+ * first character of its librarianSortKey, or "#" when that key doesn't
+ * start with an ASCII letter.
+ *
+ * Parameters:
+ *   name (string) — an album, artist, or title
+ *
+ * Returns:
+ *   string — a single character, "A"-"Z" or "#"
+ *
+ * Example:
+ *   jumpLetter("The Dave Matthews Band") // "D"
+ *   jumpLetter("3 Doors Down")           // "#"
+ */
+export function jumpLetter(name: string): string {
+  const c = librarianSortKey(name).trim().charAt(0).toUpperCase();
+  return c >= "A" && c <= "Z" ? c : "#";
+}
+
+/** renderJumpBar builds an A-Z (+ "#") jump bar, enabling only the letters
+ * present in `letters` — buckets with no matching row in the currently
+ * rendered list render disabled rather than as a dead click.
+ *
+ * Parameters:
+ *   letters (Set<string>) — jump letters actually present in the current list
+ *
+ * Returns:
+ *   string — HTML for the jump bar
+ *
+ * Example:
+ *   renderJumpBar(new Set(albums.map(a => jumpLetter(a.displayName))))
+ */
+export function renderJumpBar(letters: Set<string>): string {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ#".split("");
+  return `<div class="az-bar">` +
+    alphabet
+      .map((l) =>
+        `<button class="az-btn" data-jump-to="${l}"${letters.has(l) ? "" : " disabled"}>${l}</button>`
+      )
+      .join("") +
+    `</div>`;
+}
+
 // ---------------------------------------------------------------------------
 // Shadow DOM template
 // ---------------------------------------------------------------------------
@@ -303,6 +367,18 @@ const STYLES = `
 }
 .row-remove-btn:hover { background: #fde8e8; border-color: #e74c3c; color: #e74c3c; }
 .list-empty { padding: 10px; color: #888; text-align: center; font-style: italic; }
+.az-bar {
+  display: flex; flex-wrap: wrap; gap: 2px; padding: 4px 8px;
+  border-bottom: 1px solid #e8e8e8; background: #fafafa;
+}
+.az-btn {
+  flex: 0 0 auto; padding: 1px 4px; min-width: 16px; border: none;
+  border-radius: 2px; background: transparent; color: #4a90d9;
+  cursor: pointer; font-size: 11px; line-height: 1.4;
+}
+.az-btn:hover { background: #e8f0fe; }
+.az-btn:disabled { color: #ccc; cursor: default; }
+.az-btn:disabled:hover { background: transparent; }
 
 /* ---- folder tree ---- */
 .folder-toggle-btn {
@@ -944,11 +1020,13 @@ export class AudioInfoPlayer extends _Base {
       this._setListContent('<div class="list-empty">No items found</div>');
       return;
     }
+    const jumpBar = renderJumpBar(new Set(albums.map((a) => jumpLetter(a.displayName))));
     this._setListContent(
+      jumpBar +
       albums
         .map(
           (a) =>
-            `<div class="list-item" data-browse-tab="albums" data-browse-item="${this._escAttr(a.dir)}" data-browse-label="${this._escAttr(a.displayName)}">` +
+            `<div class="list-item" data-jump-letter="${jumpLetter(a.displayName)}" data-browse-tab="albums" data-browse-item="${this._escAttr(a.dir)}" data-browse-label="${this._escAttr(a.displayName)}">` +
             `<div class="list-item-main"><div class="list-item-title">${this._escHtml(a.displayName)}</div></div>` +
             `<button class="row-add-btn" title="Add to queue" data-add-tab="albums" data-add-item="${this._escAttr(a.dir)}">⊕</button>` +
             `</div>`,
@@ -962,11 +1040,13 @@ export class AudioInfoPlayer extends _Base {
       this._setListContent('<div class="list-empty">No items found</div>');
       return;
     }
+    const jumpBar = renderJumpBar(new Set(items.map((item) => jumpLetter(item))));
     this._setListContent(
+      jumpBar +
       items
         .map(
           (item) =>
-            `<div class="list-item" data-browse-tab="${this._escAttr(tab)}" data-browse-item="${this._escAttr(item)}">` +
+            `<div class="list-item" data-jump-letter="${jumpLetter(item)}" data-browse-tab="${this._escAttr(tab)}" data-browse-item="${this._escAttr(item)}">` +
             `<div class="list-item-main"><div class="list-item-title">${this._escHtml(item)}</div></div>` +
             `<button class="row-add-btn" title="Add to queue" data-add-tab="${this._escAttr(tab)}" data-add-item="${this._escAttr(item)}">⊕</button>` +
             `</div>`,
@@ -1253,6 +1333,16 @@ export class AudioInfoPlayer extends _Base {
 
     // Browse/result list clicks (delegated on list-panel)
     this.qs(".list-panel").addEventListener("click", (e: Event) => {
+      // A-Z jump bar button — scroll the first matching row into view.
+      const jumpBtn = (e.target as Element).closest<HTMLButtonElement>("[data-jump-to]");
+      if (jumpBtn) {
+        if (jumpBtn.disabled) return;
+        const letter = jumpBtn.dataset.jumpTo!;
+        const target = this.qs(`.list-panel [data-jump-letter="${letter}"]`);
+        target?.scrollIntoView({ block: "start" });
+        return;
+      }
+
       // Folder toggle button.
       const toggleBtn = (e.target as Element).closest<HTMLElement>("[data-toggle-folder]");
       if (toggleBtn) {

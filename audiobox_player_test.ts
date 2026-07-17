@@ -9,8 +9,11 @@ import {
   formatArtists,
   formatDuration,
   isFieldScopedQuery,
+  jumpLetter,
+  librarianSortKey,
   parseDurationSecs,
   PLAYER_TEMPLATE,
+  renderJumpBar,
 } from "./audiobox_player.ts";
 
 // ---------------------------------------------------------------------------
@@ -234,6 +237,56 @@ Deno.test("dirOfContentURL - root-level file has no directory", () => {
 
 Deno.test("dirOfContentURL - normalizes Windows-style separators", () => {
   assertEquals(dirOfContentURL("Some\\Windows\\Path\\track.mp3"), "Some/Windows/Path");
+});
+
+// ---------------------------------------------------------------------------
+// librarianSortKey / jumpLetter / renderJumpBar — A-Z jump bar support.
+// Must mirror audiobox.go's librarianSortKey exactly so client-side letter
+// bucketing lines up with the server-sorted list order.
+// ---------------------------------------------------------------------------
+
+Deno.test("librarianSortKey - strips a leading standalone article", () => {
+  assertEquals(librarianSortKey("The Dave Matthews Band"), "dave matthews band");
+  assertEquals(librarianSortKey("the dave matthews band"), "dave matthews band");
+  assertEquals(librarianSortKey("A Perfect Circle"), "perfect circle");
+  assertEquals(librarianSortKey("An Cafe"), "cafe");
+});
+
+Deno.test("librarianSortKey - leaves non-article words starting with the same letters alone", () => {
+  assertEquals(librarianSortKey("Theatre of Tragedy"), "theatre of tragedy");
+  assertEquals(librarianSortKey("Anaconda"), "anaconda");
+  assertEquals(librarianSortKey("A-ha"), "a-ha");
+});
+
+Deno.test("librarianSortKey - an article with nothing after it is left as-is", () => {
+  assertEquals(librarianSortKey("The"), "the");
+  assertEquals(librarianSortKey("A"), "a");
+});
+
+Deno.test("jumpLetter - buckets by the librarian sort key's first letter", () => {
+  assertEquals(jumpLetter("The Dave Matthews Band"), "D");
+  assertEquals(jumpLetter("Eagles"), "E");
+  assertEquals(jumpLetter("eagles"), "E");
+});
+
+Deno.test("jumpLetter - non-alphabetic sort keys bucket under #", () => {
+  assertEquals(jumpLetter("3 Doors Down"), "#");
+  assertEquals(jumpLetter(""), "#");
+});
+
+Deno.test("renderJumpBar - enables only letters present in the given set", () => {
+  const doc = new DOMParser().parseFromString(
+    `<html><body>${renderJumpBar(new Set(["D", "E"]))}</body></html>`,
+    "text/html",
+  )!;
+  const d = doc.querySelector('[data-jump-to="D"]');
+  const e = doc.querySelector('[data-jump-to="E"]');
+  const a = doc.querySelector('[data-jump-to="A"]');
+  const hash = doc.querySelector('[data-jump-to="#"]');
+  assertEquals(d?.hasAttribute("disabled"), false);
+  assertEquals(e?.hasAttribute("disabled"), false);
+  assertEquals(a?.hasAttribute("disabled"), true);
+  assertEquals(hash?.hasAttribute("disabled"), true);
 });
 
 // ---------------------------------------------------------------------------
