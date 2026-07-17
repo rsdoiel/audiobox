@@ -1062,7 +1062,19 @@ var (
 	reDiscTrack  = regexp.MustCompile(`^(\d+)-(\d{2})[\s\-]`)
 	reTrackOnly  = regexp.MustCompile(`^(\d+)[\s\-]`)
 	reGenericDir = regexp.MustCompile(`(?i)^(tracks?|cd\s*\d+|dis[ck]\s*\d+|side\s*[ab])$`)
+	// reGenericRootDir matches common top-level organizational container
+	// directories (e.g. "~/Audio/Music/Albums/<Album>/track") that are never
+	// themselves an artist name, distinct from reGenericDir's per-album
+	// containers (Tracks/CD/Disc/Side).
+	reGenericRootDir = regexp.MustCompile(`(?i)^(music|audio|albums?|library|collection)$`)
 )
+
+// isGenericRootDirName reports whether name is a generic top-level
+// organizational container (Music, Albums, Audio, ...) rather than a
+// candidate artist name.
+func isGenericRootDirName(name string) bool {
+	return reGenericRootDir.MatchString(strings.TrimSpace(name))
+}
 
 // parseDiscTrackFromFilename extracts disc and track numbers from a filename stem
 // (no extension) using common music library naming conventions.
@@ -1193,24 +1205,33 @@ func albumDirPath(audioDir, trackDir string) string {
 	return absAudio
 }
 
-// artistFromPath derives an artist name from the directory structure. When
-// there are at least two directory levels between audioDir and the file AND
-// the outermost component differs from the derived album name, that outermost
-// component is returned as the artist.
+// artistFromPath derives an artist name from the directory structure. It
+// walks the path components outermost-to-innermost (excluding the album's
+// own directory), skipping generic top-level organizational containers
+// ("Music", "Albums", "Audio", ...), and returns the first remaining
+// component that differs from the derived album name.
 //
-//	~/Music/Artist/Album/track.mp3         →  "Artist"
-//	~/Music/Artist/Album/Tracks/track.mp3  →  "Artist"
-//	~/Music/Album/track.mp3                →  "" (only one level)
-//	~/Music/Ulithian Songs/Tracks/t.mp3    →  "" (outermost == album)
+//	~/Music/Artist/Album/track.mp3            →  "Artist"
+//	~/Music/Artist/Album/Tracks/track.mp3     →  "Artist"
+//	~/Audio/Music/Albums/Album/track.mp3      →  "" (both roots generic, nothing left)
+//	~/Audio/Music/Artist/Album/track.mp3      →  "Artist" (generic root skipped)
+//	~/Music/Album/track.mp3                   →  "" (only one level)
+//	~/Music/Ulithian Songs/Tracks/t.mp3       →  "" (outermost == album)
 func artistFromPath(audioDir, filePath string) string {
 	parts := pathDirParts(audioDir, filePath)
 	if len(parts) < 2 {
 		return ""
 	}
 	albumName := albumFromPath(audioDir, filePath)
-	outermost := deslugify(parts[0])
-	if outermost != albumName {
-		return outermost
+	for _, p := range parts[:len(parts)-1] {
+		if isGenericRootDirName(p) {
+			continue
+		}
+		candidate := deslugify(p)
+		if candidate != albumName {
+			return candidate
+		}
+		return ""
 	}
 	return ""
 }

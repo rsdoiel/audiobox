@@ -772,6 +772,13 @@ func TestArtistFromPath(t *testing.T) {
 		{"/music/Artist/Album/Tracks/track.mp3", "Artist"},
 		// Outermost == album (e.g. "Ulithian Songs/Tracks/") → no artist
 		{"/music/Ulithian Songs/Tracks/track.mp3", ""},
+		// Generic root container(s) (e.g. "Music/Albums/<Album>/track") are not
+		// an artist name — regression test: this used to wrongly return "Music".
+		{"/music/Music/Albums/Travels/track.wav", ""},
+		{"/music/Music/Albums/Peace-Love-Ukulele/track.wav", ""},
+		{"/music/Audio/Album/track.mp3", ""},
+		// A real artist folder nested under a generic root is still found.
+		{"/music/Music/Jake Shimabukuro/Travels/track.wav", "Jake Shimabukuro"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.filePath, func(t *testing.T) {
