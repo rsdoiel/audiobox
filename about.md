@@ -12,7 +12,7 @@ authors:
 
 
 repository_code: https://github.com/rsdoiel/audiobox
-version: 0.0.4
+version: 0.0.5
 license_url: https://www.gnu.org/licenses/agpl-3.0.txt
 
 programming_language:
@@ -20,22 +20,25 @@ programming_language:
   - TypeScript
 
 
-date_released: 2026-05-29
+date_released: 2026-07-17
 ---
 
 About this software
 ===================
 
-## audiobox 0.0.4
+## audiobox 0.0.5
 
-- Folders tab: two-level browse tree (root → sub-folder) with per-folder ON/OFF toggles; exclusion state is persisted server-side in audio.yaml and applied automatically to Albums, Artists, and Titles browse views
-- Playlists: save the current queue as a named playlist; load or delete saved playlists from a new Playlists tab; backend schema adds playlists and playlist_tracks tables
-- Network sharing: Share button enables LAN access on a chosen IPv4 address; remoteAccessMiddleware restricts write operations to loopback clients; share address persisted in config
-- Relative path storage: content_url values are stored relative to AudioDir; automatic migration on DB open converts any absolute paths
-- Search improvements: grouped results (Albums / Artists / Titles / Tracks) with per-group Add All and per-item add/remove queue buttons
-- Player UX: always-visible now-playing panel, folder context line, queue runtime estimate, per-item remove, auto-advance on track end, no-autoplay on queue add
-- Scan / sweep elapsed-time indicator during async operations
-- Bug fixes: scan/sweep/share status buttons now capture DOM elements at click time to prevent null-reference errors in async poll callbacks; share listener restart delayed 300 ms to ensure HTTP response is delivered before connection closes
+- Album/folder resolution: Albums and Folders tabs now resolve tracks by exact directory instead of a tag-based search, fixing albums that appeared empty or pulled in tracks from a similarly-named sibling album (e.g. "Travel" vs "Travels with Jack")
+- Search correctness: exact field-scoped queries (album:/artist:/title:) no longer silently fall back to fuzzy matching on zero results — only free-text queries get typo tolerance
+- Artists tab: clicking an artist now shows their albums first (each with its own add-to-queue button) instead of a flat track list
+- Albums tab: plain-text search now filters by album name or artist name, with no prefix required; explicit album:/artist:/title:/genre: prefixes documented in the search box
+- Folders tab: the browse tree now expands every directory at every depth (was capped at two levels), each independently selectable, toggleable, and queueable
+- Librarian-style sort order for Albums, Artists, and Titles: a leading "The"/"A"/"An" is ignored for filing purposes (display text is unchanged)
+- A-Z jump bar on Albums/Artists/Titles: stays visible while scrolling; each entry is reachable from both its filed-under letter and its literal first-word letter
+- Playlists: import/export as OPML 2.0 files (matched back to tracks by file path, not database ID, so playlists survive rescans); "Build Playlist…" generates a playlist from criteria (artist name substring, release year range, one-off folder exclusions)
+- Queue shuffle: only protects tracks once playback has actually started — a freshly built, unplayed queue reshuffles fully instead of always keeping the same track first
+- WAV metadata: added a RIFF "LIST"/"INFO" chunk parser as a fallback tag source for .wav files (previously unsupported), recovering artist/title/album/genre when embedded
+- Fixed a metadata fallback bug where a library laid out as e.g. Music/Albums/<Album>/track.wav could misattribute the artist as the literal container folder name ("Music") instead of falling back correctly
 
 ## Authors
 
