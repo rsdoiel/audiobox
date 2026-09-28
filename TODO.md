@@ -8,10 +8,10 @@
 - [ ] Drop terminal based player, only support playback from web browser
   - [ ] cleanup any code, simplify code base if possible
 
-- [ ] Podcast support: listen to MP3s in the Audio/Podcasts directory
-  - [ ] flag a podcast episode as listened-to
-  - [ ] automatic sweep that deletes stale listened-to episodes
-  - [ ] flag an individual episode to be archived, exempting it from the sweep
+- [x] Podcast support: listen to MP3s in the Audio/Podcasts directory
+  - [x] flag a podcast episode as listened-to
+  - [x] automatic sweep that deletes stale listened-to episodes
+  - [x] flag an individual episode to be archived, exempting it from the sweep
 
 ## Questions
 

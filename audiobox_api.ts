@@ -112,6 +112,55 @@ export interface ScanStarted {
   started_at: string;
 }
 
+/** Subscription is one entry parsed from Podcasts/subscriptions.md, as
+ * returned by GET/POST /api/podcasts/subscriptions.
+ */
+export interface Subscription {
+  Label: string;
+  FeedURL: string;
+}
+
+/** PodcastEpisode mirrors the Go PodcastEpisode struct. Field names match
+ * the Go struct field names (no json tags on the Go side).
+ */
+export interface PodcastEpisode {
+  ID: string;
+  FeedURL: string;
+  ShowLabel: string;
+  GUID: string;
+  Title: string;
+  Published: string;
+  EnclosureURL: string;
+  ContentURL: string;
+  Duration: string;
+  Status: "new" | "downloaded" | "listened";
+  ListenedAt: string;
+  Keep: boolean;
+  Created: string;
+  Updated: string;
+}
+
+/** PodcastShowSummary describes one subscribed show, as returned by GET /api/podcasts/shows. */
+export interface PodcastShowSummary {
+  label: string;
+  feedURL: string;
+  episodeCount: number;
+  lastSyncedAt?: string;
+  lastError?: string;
+}
+
+/** PodcastSyncStatus extends ScanStatus with the outcome of a podcast sync. */
+export interface PodcastSyncStatus extends ScanStatus {
+  feeds_checked?: number;
+  new_episodes?: number;
+  feed_errors?: Record<string, string>;
+}
+
+/** PodcastSweepStatus extends ScanStatus with an episodes_removed count. */
+export interface PodcastSweepStatus extends ScanStatus {
+  episodes_removed?: number;
+}
+
 /** AudioInfoAPI is a typed fetch wrapper for all audiobox HTTP JSON endpoints.
  *
  * Parameters:
@@ -131,7 +180,9 @@ export class AudioInfoAPI {
   private async getJSON<T>(path: string): Promise<T> {
     const resp = await fetch(this.baseUrl + path);
     if (!resp.ok) {
-      const body = await resp.json().catch(() => ({ error: resp.statusText })) as {
+      const body = await resp.json().catch(() => ({
+        error: resp.statusText,
+      })) as {
         error?: string;
       };
       throw new Error(body.error ?? resp.statusText);
@@ -142,7 +193,9 @@ export class AudioInfoAPI {
   private async postJSON<T>(path: string): Promise<T> {
     const resp = await fetch(this.baseUrl + path, { method: "POST" });
     if (!resp.ok) {
-      const body = await resp.json().catch(() => ({ error: resp.statusText })) as {
+      const body = await resp.json().catch(() => ({
+        error: resp.statusText,
+      })) as {
         error?: string;
       };
       throw new Error(body.error ?? resp.statusText);
@@ -249,7 +302,9 @@ export class AudioInfoAPI {
    *   const tracks = await api.listFolderTracks("Jazz/Miles-Davis/Kind-Of-Blue");
    */
   async listFolderTracks(dir: string): Promise<AudioInfo[]> {
-    return this.getJSON<AudioInfo[]>(`/api/list/folder-tracks?dir=${encodeURIComponent(dir)}`);
+    return this.getJSON<AudioInfo[]>(
+      `/api/list/folder-tracks?dir=${encodeURIComponent(dir)}`,
+    );
   }
 
   /** listAlbumTracks returns all audio files under the given album directory.
@@ -269,7 +324,9 @@ export class AudioInfoAPI {
    *   const tracks = await api.listAlbumTracks(albums[0].dir);
    */
   async listAlbumTracks(dir: string): Promise<AudioInfo[]> {
-    return this.getJSON<AudioInfo[]>(`/api/list/album-tracks?dir=${encodeURIComponent(dir)}`);
+    return this.getJSON<AudioInfo[]>(
+      `/api/list/album-tracks?dir=${encodeURIComponent(dir)}`,
+    );
   }
 
   /** queryTracks returns tracks matching the given criteria — used to build
@@ -353,7 +410,9 @@ export class AudioInfoAPI {
       { method: "DELETE" },
     );
     if (!resp.ok) {
-      const body = await resp.json().catch(() => ({ error: resp.statusText })) as {
+      const body = await resp.json().catch(() => ({
+        error: resp.statusText,
+      })) as {
         error?: string;
       };
       throw new Error(body.error ?? resp.statusText);
@@ -373,7 +432,9 @@ export class AudioInfoAPI {
   async startScan(): Promise<ScanStarted> {
     const resp = await fetch(this.baseUrl + "/api/scan", { method: "POST" });
     if (resp.status !== 202) {
-      const body = await resp.json().catch(() => ({ error: resp.statusText })) as {
+      const body = await resp.json().catch(() => ({
+        error: resp.statusText,
+      })) as {
         error?: string;
       };
       throw new Error(body.error ?? resp.statusText);
@@ -405,7 +466,9 @@ export class AudioInfoAPI {
   async startSweep(): Promise<ScanStarted> {
     const resp = await fetch(this.baseUrl + "/api/sweep", { method: "POST" });
     if (resp.status !== 202) {
-      const body = await resp.json().catch(() => ({ error: resp.statusText })) as {
+      const body = await resp.json().catch(() => ({
+        error: resp.statusText,
+      })) as {
         error?: string;
       };
       throw new Error(body.error ?? resp.statusText);
@@ -463,14 +526,18 @@ export class AudioInfoAPI {
    * Example:
    *   const r = await api.shareOn("192.168.1.5");
    */
-  async shareOn(address: string): Promise<{ status: string; poll_url: string }> {
+  async shareOn(
+    address: string,
+  ): Promise<{ status: string; poll_url: string }> {
     const resp = await fetch(this.baseUrl + "/api/share/on", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ address }),
     });
     if (!resp.ok) {
-      const body = await resp.json().catch(() => ({ error: resp.statusText })) as {
+      const body = await resp.json().catch(() => ({
+        error: resp.statusText,
+      })) as {
         error?: string;
       };
       throw new Error(body.error ?? resp.statusText);
@@ -488,7 +555,9 @@ export class AudioInfoAPI {
    *   const r = await api.shareOff();
    */
   async shareOff(): Promise<{ status: string; poll_url: string }> {
-    return this.postJSON<{ status: string; poll_url: string }>("/api/share/off");
+    return this.postJSON<{ status: string; poll_url: string }>(
+      "/api/share/off",
+    );
   }
 
   /** getExcludedFolders returns the list of folder paths currently excluded from browse views.
@@ -522,7 +591,9 @@ export class AudioInfoAPI {
       body: JSON.stringify({ excluded }),
     });
     if (!resp.ok) {
-      const body = await resp.json().catch(() => ({ error: resp.statusText })) as {
+      const body = await resp.json().catch(() => ({
+        error: resp.statusText,
+      })) as {
         error?: string;
       };
       throw new Error(body.error ?? resp.statusText);
@@ -564,7 +635,9 @@ export class AudioInfoAPI {
       body: JSON.stringify({ name, trackIds }),
     });
     if (!resp.ok) {
-      const body = await resp.json().catch(() => ({ error: resp.statusText })) as {
+      const body = await resp.json().catch(() => ({
+        error: resp.statusText,
+      })) as {
         error?: string;
       };
       throw new Error(body.error ?? resp.statusText);
@@ -584,7 +657,9 @@ export class AudioInfoAPI {
    *   const tracks = await api.loadPlaylist("550e8400-e29b-41d4-a716-446655440000");
    */
   async loadPlaylist(id: string): Promise<AudioInfo[]> {
-    return this.getJSON<AudioInfo[]>(`/api/playlists/${encodeURIComponent(id)}`);
+    return this.getJSON<AudioInfo[]>(
+      `/api/playlists/${encodeURIComponent(id)}`,
+    );
   }
 
   /** deletePlaylist removes a playlist from the collection.
@@ -604,7 +679,9 @@ export class AudioInfoAPI {
       { method: "DELETE" },
     );
     if (!resp.ok) {
-      const body = await resp.json().catch(() => ({ error: resp.statusText })) as {
+      const body = await resp.json().catch(() => ({
+        error: resp.statusText,
+      })) as {
         error?: string;
       };
       throw new Error(body.error ?? resp.statusText);
@@ -647,7 +724,10 @@ export class AudioInfoAPI {
    *   const result = await api.importPlaylistOPML(file);
    *   console.log(`${result.imported} imported, ${result.skipped} skipped`);
    */
-  async importPlaylistOPML(file: File, name?: string): Promise<PlaylistImportResult> {
+  async importPlaylistOPML(
+    file: File,
+    name?: string,
+  ): Promise<PlaylistImportResult> {
     const form = new FormData();
     form.set("file", file);
     if (name) form.set("name", name);
@@ -656,7 +736,9 @@ export class AudioInfoAPI {
       body: form,
     });
     if (!resp.ok) {
-      const body = await resp.json().catch(() => ({ error: resp.statusText })) as {
+      const body = await resp.json().catch(() => ({
+        error: resp.statusText,
+      })) as {
         error?: string;
       };
       throw new Error(body.error ?? resp.statusText);
@@ -689,12 +771,336 @@ export class AudioInfoAPI {
    *   await api.shutdown();
    */
   async shutdown(): Promise<{ status: string }> {
-    const resp = await fetch(this.baseUrl + "/api/shutdown", { method: "POST" });
+    const resp = await fetch(this.baseUrl + "/api/shutdown", {
+      method: "POST",
+    });
     // Server may close the connection before sending a full response; treat any
     // network error here as expected and return a synthetic acknowledgement.
     if (!resp.ok) {
       return { status: "shutting down" };
     }
-    return resp.json().catch(() => ({ status: "shutting down" })) as Promise<{ status: string }>;
+    return resp.json().catch(() => ({ status: "shutting down" })) as Promise<
+      { status: string }
+    >;
+  }
+
+  // ---- podcasts -----------------------------------------------------------
+
+  /** listPodcastSubscriptions returns every subscription parsed from Podcasts/subscriptions.md.
+   *
+   * Returns:
+   *   Promise<Subscription[]> — subscriptions in file order; empty when none yet
+   *
+   * Example:
+   *   const subs = await api.listPodcastSubscriptions();
+   */
+  async listPodcastSubscriptions(): Promise<Subscription[]> {
+    return this.getJSON<Subscription[]>("/api/podcasts/subscriptions");
+  }
+
+  /** addPodcastSubscription appends one subscription to Podcasts/subscriptions.md.
+   *
+   * Parameters:
+   *   label   (string) — display label for the show
+   *   feedURL (string) — the feed's URL
+   *
+   * Returns:
+   *   Promise<Subscription[]> — the full subscription list after the add
+   *
+   * Example:
+   *   await api.addPodcastSubscription("Radiolab", "https://feeds.wnyc.org/radiolab");
+   */
+  async addPodcastSubscription(
+    label: string,
+    feedURL: string,
+  ): Promise<Subscription[]> {
+    const resp = await fetch(this.baseUrl + "/api/podcasts/subscriptions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ label, feedURL }),
+    });
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => ({
+        error: resp.statusText,
+      })) as {
+        error?: string;
+      };
+      throw new Error(body.error ?? resp.statusText);
+    }
+    return resp.json() as Promise<Subscription[]>;
+  }
+
+  /** startPodcastSync initiates an asynchronous check of every subscribed
+   * feed for new episodes. Sync only discovers episode metadata; it does
+   * not download audio.
+   *
+   * Returns:
+   *   Promise<ScanStarted> — confirmation with started_at timestamp; throws on 409 conflict
+   *
+   * Example:
+   *   const result = await api.startPodcastSync();
+   */
+  async startPodcastSync(): Promise<ScanStarted> {
+    const resp = await fetch(this.baseUrl + "/api/podcasts/sync", {
+      method: "POST",
+    });
+    if (resp.status !== 202) {
+      const body = await resp.json().catch(() => ({
+        error: resp.statusText,
+      })) as {
+        error?: string;
+      };
+      throw new Error(body.error ?? resp.statusText);
+    }
+    return resp.json() as Promise<ScanStarted>;
+  }
+
+  /** podcastSyncStatus returns the current state of the async podcast sync.
+   *
+   * Returns:
+   *   Promise<PodcastSyncStatus> — idle | running | completed | error; completed includes feeds_checked/new_episodes
+   *
+   * Example:
+   *   const s = await api.podcastSyncStatus();
+   */
+  async podcastSyncStatus(): Promise<PodcastSyncStatus> {
+    return this.getJSON<PodcastSyncStatus>("/api/podcasts/sync/status");
+  }
+
+  /** listPodcastShows returns every subscribed show with its episode count
+   * and last sync outcome.
+   *
+   * Returns:
+   *   Promise<PodcastShowSummary[]> — one entry per synced feed
+   *
+   * Example:
+   *   const shows = await api.listPodcastShows();
+   */
+  async listPodcastShows(): Promise<PodcastShowSummary[]> {
+    return this.getJSON<PodcastShowSummary[]>("/api/podcasts/shows");
+  }
+
+  /** listPodcastShowEpisodes returns every episode stored under a show's label.
+   *
+   * Parameters:
+   *   label (string) — the show label, as returned by listPodcastShows()
+   *
+   * Returns:
+   *   Promise<PodcastEpisode[]> — episodes for that show, newest published first
+   *
+   * Example:
+   *   const episodes = await api.listPodcastShowEpisodes("Marketplace");
+   */
+  async listPodcastShowEpisodes(label: string): Promise<PodcastEpisode[]> {
+    return this.getJSON<PodcastEpisode[]>(
+      `/api/podcasts/shows/${encodeURIComponent(label)}/episodes`,
+    );
+  }
+
+  /** downloadPodcastEpisode fetches an episode's audio and marks it downloaded.
+   * Idempotent: calling it again on an already-downloaded episode is a no-op
+   * that returns the existing result.
+   *
+   * Parameters:
+   *   id (string) — the episode's id
+   *
+   * Returns:
+   *   Promise<PodcastEpisode> — the episode, updated with its new ContentURL and status
+   *
+   * Example:
+   *   const ep = await api.downloadPodcastEpisode(episodeId);
+   */
+  async downloadPodcastEpisode(id: string): Promise<PodcastEpisode> {
+    return this.postJSON<PodcastEpisode>(
+      `/api/podcasts/episodes/${encodeURIComponent(id)}/download`,
+    );
+  }
+
+  /** markPodcastEpisodeListened marks an episode listened and records the current time.
+   *
+   * Parameters:
+   *   id (string) — the episode's id
+   *
+   * Returns:
+   *   Promise<PodcastEpisode> — the episode after the update
+   *
+   * Example:
+   *   await api.markPodcastEpisodeListened(episodeId);
+   */
+  async markPodcastEpisodeListened(id: string): Promise<PodcastEpisode> {
+    return this.postJSON<PodcastEpisode>(
+      `/api/podcasts/episodes/${encodeURIComponent(id)}/listened`,
+    );
+  }
+
+  /** markPodcastEpisodeUnlistened reverts an episode to downloaded (or new) and clears ListenedAt.
+   *
+   * Parameters:
+   *   id (string) — the episode's id
+   *
+   * Returns:
+   *   Promise<PodcastEpisode> — the episode after the update
+   *
+   * Example:
+   *   await api.markPodcastEpisodeUnlistened(episodeId);
+   */
+  async markPodcastEpisodeUnlistened(id: string): Promise<PodcastEpisode> {
+    return this.postJSON<PodcastEpisode>(
+      `/api/podcasts/episodes/${encodeURIComponent(id)}/unlistened`,
+    );
+  }
+
+  /** setPodcastEpisodeKeep sets or clears an episode's Keep flag, exempting
+   * it from the retention sweep regardless of age.
+   *
+   * Parameters:
+   *   id   (string)  — the episode's id
+   *   keep (boolean) — true to exempt from the sweep, false to make it sweepable again
+   *
+   * Returns:
+   *   Promise<PodcastEpisode> — the episode after the update
+   *
+   * Example:
+   *   await api.setPodcastEpisodeKeep(episodeId, true);
+   */
+  async setPodcastEpisodeKeep(
+    id: string,
+    keep: boolean,
+  ): Promise<PodcastEpisode> {
+    const resp = await fetch(
+      this.baseUrl + `/api/podcasts/episodes/${encodeURIComponent(id)}/keep`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ keep }),
+      },
+    );
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => ({
+        error: resp.statusText,
+      })) as {
+        error?: string;
+      };
+      throw new Error(body.error ?? resp.statusText);
+    }
+    return resp.json() as Promise<PodcastEpisode>;
+  }
+
+  /** deletePodcastEpisode removes an episode's row and, if present, its downloaded file.
+   *
+   * Parameters:
+   *   id (string) — the episode's id
+   *
+   * Returns:
+   *   Promise<{status, id}> — confirmation; throws on 404
+   *
+   * Example:
+   *   await api.deletePodcastEpisode(episodeId);
+   */
+  async deletePodcastEpisode(
+    id: string,
+  ): Promise<{ status: string; id: string }> {
+    const resp = await fetch(
+      this.baseUrl + `/api/podcasts/episodes/${encodeURIComponent(id)}`,
+      { method: "DELETE" },
+    );
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => ({
+        error: resp.statusText,
+      })) as {
+        error?: string;
+      };
+      throw new Error(body.error ?? resp.statusText);
+    }
+    return resp.json() as Promise<{ status: string; id: string }>;
+  }
+
+  /** migratePodcastEpisode moves an episode's file into destination (relative
+   * to AudioDir, created if missing) and records it as a normal library track.
+   *
+   * Parameters:
+   *   id          (string) — the episode's id
+   *   destination (string) — destination folder, relative to AudioDir
+   *
+   * Returns:
+   *   Promise<{status, audio_id}> — the new library record's id
+   *
+   * Example:
+   *   const r = await api.migratePodcastEpisode(episodeId, "Classical/Lectures");
+   */
+  async migratePodcastEpisode(
+    id: string,
+    destination: string,
+  ): Promise<{ status: string; audio_id: string }> {
+    const resp = await fetch(
+      this.baseUrl + `/api/podcasts/episodes/${encodeURIComponent(id)}/migrate`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ destination }),
+      },
+    );
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => ({
+        error: resp.statusText,
+      })) as {
+        error?: string;
+      };
+      throw new Error(body.error ?? resp.statusText);
+    }
+    return resp.json() as Promise<{ status: string; audio_id: string }>;
+  }
+
+  /** startPodcastSweep initiates an asynchronous removal of stale listened episodes.
+   *
+   * Returns:
+   *   Promise<ScanStarted> — confirmation with started_at timestamp; throws on 409 conflict
+   *
+   * Example:
+   *   const result = await api.startPodcastSweep();
+   */
+  async startPodcastSweep(): Promise<ScanStarted> {
+    const resp = await fetch(this.baseUrl + "/api/podcasts/sweep", {
+      method: "POST",
+    });
+    if (resp.status !== 202) {
+      const body = await resp.json().catch(() => ({
+        error: resp.statusText,
+      })) as {
+        error?: string;
+      };
+      throw new Error(body.error ?? resp.statusText);
+    }
+    return resp.json() as Promise<ScanStarted>;
+  }
+
+  /** podcastSweepStatus returns the current state of the async podcast sweep.
+   *
+   * Returns:
+   *   Promise<PodcastSweepStatus> — idle | running | completed | error; completed includes episodes_removed
+   *
+   * Example:
+   *   const s = await api.podcastSweepStatus();
+   */
+  async podcastSweepStatus(): Promise<PodcastSweepStatus> {
+    return this.getJSON<PodcastSweepStatus>("/api/podcasts/sweep/status");
+  }
+
+  /** podcastEpisodeAudioUrl returns the streaming URL for a downloaded episode.
+   * No network request is made.
+   *
+   * Parameters:
+   *   id (string) — the episode's id
+   *
+   * Returns:
+   *   string — URL suitable for an HTMLAudioElement src attribute
+   *
+   * Example:
+   *   audio.src = api.podcastEpisodeAudioUrl(episodeId);
+   */
+  podcastEpisodeAudioUrl(id: string): string {
+    return `${this.baseUrl}/api/podcasts/episodes/${
+      encodeURIComponent(id)
+    }/audio`;
   }
 }

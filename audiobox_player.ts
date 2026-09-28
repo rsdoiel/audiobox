@@ -1,4 +1,15 @@
-import type { Agent, AlbumEntry, AudioInfo, CollectionStatus, FolderEntry, PlaylistInfo, ShareStatus } from "./audiobox_api.ts";
+import type {
+  Agent,
+  AlbumEntry,
+  AudioInfo,
+  CollectionStatus,
+  FolderEntry,
+  PlaylistInfo,
+  PodcastEpisode,
+  PodcastShowSummary,
+  ShareStatus,
+  Subscription,
+} from "./audiobox_api.ts";
 import { AudioInfoAPI } from "./audiobox_api.ts";
 
 // ---------------------------------------------------------------------------
@@ -80,10 +91,14 @@ export function parseDurationSecs(iso: string): number {
 export function buildBrowseQuery(tab: string, item: string): string {
   const escaped = item.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
   switch (tab) {
-    case "albums":  return `album:"${escaped}"`;
-    case "artists": return `artist:"${escaped}"`;
-    case "titles":  return `title:"${escaped}"`;
-    default:        return item;
+    case "albums":
+      return `album:"${escaped}"`;
+    case "artists":
+      return `artist:"${escaped}"`;
+    case "titles":
+      return `title:"${escaped}"`;
+    default:
+      return item;
   }
 }
 
@@ -105,7 +120,9 @@ export function buildBrowseQuery(tab: string, item: string): string {
  *   isFieldScopedQuery("Shimabukuro")        // false
  */
 export function isFieldScopedQuery(q: string): boolean {
-  return /^\s*(title|name|album|artist|genre|recording_of|recording)\s*:/i.test(q);
+  return /^\s*(title|name|album|artist|genre|recording_of|recording)\s*:/i.test(
+    q,
+  );
 }
 
 /** dirOfContentURL returns the directory portion of a track's ContentURL,
@@ -297,7 +314,9 @@ export function renderJumpBar(letters: Set<string>): string {
   return `<div class="az-bar">` +
     alphabet
       .map((l) =>
-        `<button class="az-btn" data-jump-to="${l}"${letters.has(l) ? "" : " disabled"}>${l}</button>`
+        `<button class="az-btn" data-jump-to="${l}"${
+          letters.has(l) ? "" : " disabled"
+        }>${l}</button>`
       )
       .join("") +
     `</div>`;
@@ -341,6 +360,52 @@ export function shuffleQueue<T>(
     [remaining[i], remaining[j]] = [remaining[j], remaining[i]];
   }
   return [...played, ...remaining];
+}
+
+/** QueueTrack is a queue/player entry: either a plain AudioInfo (a music
+ * track) or a podcast episode adapted to the same shape by
+ * podcastEpisodeToTrack, tagged with SourceType so playback (audio URL
+ * resolution, the "ended" side effect, and Save-as-Playlist) can tell them
+ * apart without the queue/player code otherwise needing two paths.
+ */
+export type QueueTrack = AudioInfo & { SourceType?: "podcast" };
+
+/** podcastEpisodeToTrack adapts a PodcastEpisode to the AudioInfo shape the
+ * queue and player already work with, so a podcast episode can be queued,
+ * played, and displayed through the exact same code as a music track.
+ *
+ * Parameters:
+ *   ep (PodcastEpisode) — the episode to adapt
+ *
+ * Returns:
+ *   QueueTrack — AudioInfo-shaped, with SourceType: "podcast"
+ *
+ * Example:
+ *   this._addToQueue([podcastEpisodeToTrack(episode)]);
+ */
+export function podcastEpisodeToTrack(ep: PodcastEpisode): QueueTrack {
+  return {
+    ID: ep.ID,
+    Created: ep.Created,
+    Updated: ep.Updated,
+    SchemaType: "PodcastEpisode",
+    Name: ep.Title,
+    Description: "",
+    ContentURL: ep.ContentURL,
+    EncodingFormat: "",
+    Duration: ep.Duration,
+    DatePublished: ep.Published,
+    InLanguage: "",
+    Genre: "",
+    Identifiers: [],
+    ByArtist: [],
+    InAlbum: ep.ShowLabel,
+    IsrcCode: "",
+    RecordingOf: "",
+    Checksum: "",
+    ChecksumAlgorithm: "",
+    SourceType: "podcast",
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -436,19 +501,19 @@ const STYLES = `
   font-size: 11px; color: #888; white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis; margin-top: 1px;
 }
-.row-add-btn {
+.row-add-btn, .podcast-ep-btn {
   flex-shrink: 0; padding: 2px 6px; border: 1px solid #ccc;
   border-radius: 3px; background: #fff; color: #666;
   cursor: pointer; font-size: 14px; line-height: 1.2;
   display: inline-block; text-decoration: none; box-sizing: border-box;
 }
-.row-add-btn:hover { background: #e8f0fe; border-color: #4a90d9; color: #1a73e8; }
-.row-remove-btn {
+.row-add-btn:hover, .podcast-ep-btn:hover { background: #e8f0fe; border-color: #4a90d9; color: #1a73e8; }
+.row-remove-btn, .podcast-ep-remove-btn {
   flex-shrink: 0; padding: 2px 6px; border: 1px solid #ccc;
   border-radius: 3px; background: #fff; color: #aaa;
   cursor: pointer; font-size: 14px; line-height: 1.2;
 }
-.row-remove-btn:hover { background: #fde8e8; border-color: #e74c3c; color: #e74c3c; }
+.row-remove-btn:hover, .podcast-ep-remove-btn:hover { background: #fde8e8; border-color: #e74c3c; color: #e74c3c; }
 .list-empty { padding: 10px; color: #888; text-align: center; font-style: italic; }
 .az-bar {
   display: flex; flex-wrap: wrap; gap: 2px; padding: 4px 8px;
@@ -599,6 +664,15 @@ const STYLES = `
   font-size: 11px; padding: 2px 4px; border: 1px solid #ccc;
   border-radius: 3px; background: #fff;
 }
+
+/* ---- podcasts ---- */
+.podcast-subscribe-row { display: flex; gap: 6px; padding: 8px 10px; }
+.podcast-subscribe-label, .podcast-subscribe-url {
+  flex: 1; min-width: 0; padding: 4px 6px; border: 1px solid #ccc;
+  border-radius: 4px; font-size: 12px;
+}
+.podcast-subscribe-status { display: block; padding: 0 10px 8px; }
+.podcast-ep-btn.podcast-keep-on { background: #fff8e1; border-color: #f9a825; color: #f9a825; }
 `;
 
 /** PLAYER_TEMPLATE is the inner HTML injected into the component's shadow root.
@@ -619,6 +693,7 @@ export const PLAYER_TEMPLATE = `
     <button class="tab" data-tab="titles">Titles</button>
     <button class="tab" data-tab="folders">Folders</button>
     <button class="tab" data-tab="playlists">Playlists</button>
+    <button class="tab" data-tab="podcasts">Podcasts</button>
   </div>
   <div class="search-bar">
     <input type="search" placeholder="Search, or album:Name / artist:Name / title:Name / /regex/"
@@ -681,6 +756,14 @@ export const PLAYER_TEMPLATE = `
       <span class="lib-status sweep-status"></span>
     </div>
     <div class="library-row">
+      <button class="lib-btn podcast-sync-btn">Sync Podcasts</button>
+      <span class="lib-status podcast-sync-status"></span>
+    </div>
+    <div class="library-row">
+      <button class="lib-btn podcast-sweep-btn">Sweep Podcasts</button>
+      <span class="lib-status podcast-sweep-status"></span>
+    </div>
+    <div class="library-row">
       <button class="lib-btn share-btn">Share</button>
       <span class="lib-status share-status"></span>
     </div>
@@ -730,7 +813,7 @@ export class AudioInfoPlayer extends _Base {
 
   private api!: AudioInfoAPI;
   private audioEl!: HTMLAudioElement;
-  private queue: AudioInfo[] = [];
+  private queue: QueueTrack[] = [];
   private currentIndex = -1;
   /** True once playback has actually started (play() called) for the
    * current queue — as opposed to merely being primed/selected. Building a
@@ -752,6 +835,10 @@ export class AudioInfoPlayer extends _Base {
   private seekDragging = false;
   private scanPollTimer = 0;
   private sweepPollTimer = 0;
+  private podcastSyncPollTimer = 0;
+  private podcastSweepPollTimer = 0;
+  private podcastEpisodesMap = new Map<string, PodcastEpisode>();
+  private podcastDrilldownLabel = "";
 
   constructor() {
     super();
@@ -763,7 +850,11 @@ export class AudioInfoPlayer extends _Base {
     this._bindAudio();
   }
 
-  attributeChangedCallback(name: string, _old: string | null, val: string | null): void {
+  attributeChangedCallback(
+    name: string,
+    _old: string | null,
+    val: string | null,
+  ): void {
     if (name === "api-url") {
       this.api = new AudioInfoAPI(val ?? "");
     }
@@ -823,22 +914,25 @@ export class AudioInfoPlayer extends _Base {
         <button class="screen-btn init-btn">Initialize Collection</button>
       </div>
     `);
-    this.shadow.querySelector(".init-btn")?.addEventListener("click", async () => {
-      const btn = this.shadow.querySelector<HTMLButtonElement>(".init-btn")!;
-      btn.disabled = true;
-      btn.textContent = "Initializing…";
-      try {
-        await this.api.init();
-        this._clearOverlay();
-        this._initPlayer();
-        this._loadTab("albums");
-      } catch (e) {
-        btn.disabled = false;
-        btn.textContent = "Initialize Collection";
-        const p = this.shadow.querySelector(".screen p")!;
-        p.textContent = `Error: ${String(e)}`;
-      }
-    });
+    this.shadow.querySelector(".init-btn")?.addEventListener(
+      "click",
+      async () => {
+        const btn = this.shadow.querySelector<HTMLButtonElement>(".init-btn")!;
+        btn.disabled = true;
+        btn.textContent = "Initializing…";
+        try {
+          await this.api.init();
+          this._clearOverlay();
+          this._initPlayer();
+          this._loadTab("albums");
+        } catch (e) {
+          btn.disabled = false;
+          btn.textContent = "Initialize Collection";
+          const p = this.shadow.querySelector(".screen p")!;
+          p.textContent = `Error: ${String(e)}`;
+        }
+      },
+    );
   }
 
   private _overlayHTML(html: string): void {
@@ -893,6 +987,8 @@ export class AudioInfoPlayer extends _Base {
       } else if (tab === "playlists") {
         const lists = await this.api.listPlaylists();
         this._renderPlaylistList(lists);
+      } else if (tab === "podcasts") {
+        await this._loadPodcastsTab();
       } else {
         const items = tab === "artists"
           ? await this.api.listArtists(excl)
@@ -900,7 +996,9 @@ export class AudioInfoPlayer extends _Base {
         this._renderStringList(items, tab);
       }
     } catch (e) {
-      this._setListContent(`<div class="list-empty">${this._escHtml(String(e))}</div>`);
+      this._setListContent(
+        `<div class="list-empty">${this._escHtml(String(e))}</div>`,
+      );
     }
   }
 
@@ -941,7 +1039,8 @@ export class AudioInfoPlayer extends _Base {
       if (isFieldScopedQuery(trimmed)) {
         tracks = await this.api.search(trimmed);
       } else {
-        const esc = (s: string) => s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+        const esc = (s: string) =>
+          s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
         const [byAlbum, byArtist] = await Promise.all([
           this.api.search(`album:"${esc(trimmed)}"`),
           this.api.search(`artist:"${esc(trimmed)}"`),
@@ -949,17 +1048,23 @@ export class AudioInfoPlayer extends _Base {
         tracks = [...byAlbum, ...byArtist];
       }
       if (tracks.length === 0) {
-        this._setListContent('<div class="list-empty">No matching albums</div>');
+        this._setListContent(
+          '<div class="list-empty">No matching albums</div>',
+        );
         return;
       }
       const filtered = await this._albumsMatchingTracks(tracks);
       if (filtered.length === 0) {
-        this._setListContent('<div class="list-empty">No matching albums</div>');
+        this._setListContent(
+          '<div class="list-empty">No matching albums</div>',
+        );
         return;
       }
       this._renderAlbumList(filtered);
     } catch (e) {
-      this._setListContent(`<div class="list-empty">${this._escHtml(String(e))}</div>`);
+      this._setListContent(
+        `<div class="list-empty">${this._escHtml(String(e))}</div>`,
+      );
     }
   }
 
@@ -969,8 +1074,12 @@ export class AudioInfoPlayer extends _Base {
    * _searchAlbumsTab and _drillDownArtistAlbums so "queue this album" always
    * goes through the same exact directory-based resolution as the Albums tab.
    */
-  private async _albumsMatchingTracks(tracks: AudioInfo[]): Promise<AlbumEntry[]> {
-    const matchedDirs = new Set(tracks.map((t) => dirOfContentURL(t.ContentURL ?? "")));
+  private async _albumsMatchingTracks(
+    tracks: AudioInfo[],
+  ): Promise<AlbumEntry[]> {
+    const matchedDirs = new Set(
+      tracks.map((t) => dirOfContentURL(t.ContentURL ?? "")),
+    );
     const albums = await this.api.listAlbums(this._getExcludedFolderPaths());
     return albums.filter((a) => matchedDirs.has(a.dir));
   }
@@ -998,7 +1107,9 @@ export class AudioInfoPlayer extends _Base {
       }
       this._renderAlbumList(albums);
     } catch (e) {
-      this._setListContent(`<div class="list-empty">${this._escHtml(String(e))}</div>`);
+      this._setListContent(
+        `<div class="list-empty">${this._escHtml(String(e))}</div>`,
+      );
     }
   }
 
@@ -1010,27 +1121,31 @@ export class AudioInfoPlayer extends _Base {
     this.searchGroups.clear();
     try {
       const esc = (s: string) => s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-      const [albumTracks, artistTracks, titleTracks, anyTracks] = await Promise.all([
-        this.api.search(`album:"${esc(trimmed)}"`),
-        this.api.search(`artist:"${esc(trimmed)}"`),
-        this.api.search(`title:"${esc(trimmed)}"`),
-        this.api.search(trimmed),
-      ]);
+      const [albumTracks, artistTracks, titleTracks, anyTracks] = await Promise
+        .all([
+          this.api.search(`album:"${esc(trimmed)}"`),
+          this.api.search(`artist:"${esc(trimmed)}"`),
+          this.api.search(`title:"${esc(trimmed)}"`),
+          this.api.search(trimmed),
+        ]);
 
       // Deduplicate: each track ID appears only in the first group that claims it.
       const seen = new Set<string>();
       const dedup = (tracks: AudioInfo[]): AudioInfo[] => {
         const out: AudioInfo[] = [];
         for (const t of tracks) {
-          if (!seen.has(t.ID)) { seen.add(t.ID); out.push(t); }
+          if (!seen.has(t.ID)) {
+            seen.add(t.ID);
+            out.push(t);
+          }
         }
         return out;
       };
       const groups: Array<{ label: string; tracks: AudioInfo[] }> = [
-        { label: "Albums",  tracks: dedup(albumTracks) },
+        { label: "Albums", tracks: dedup(albumTracks) },
         { label: "Artists", tracks: dedup(artistTracks) },
-        { label: "Titles",  tracks: dedup(titleTracks) },
-        { label: "Tracks",  tracks: dedup(anyTracks) },
+        { label: "Titles", tracks: dedup(titleTracks) },
+        { label: "Tracks", tracks: dedup(anyTracks) },
       ].filter((g) => g.tracks.length > 0);
 
       for (const g of groups) {
@@ -1040,8 +1155,9 @@ export class AudioInfoPlayer extends _Base {
 
       const matchingFolders = this.folderCache
         ? this.folderCache.filter((f) =>
-            f.name.toLowerCase().includes(trimmed.toLowerCase()) ||
-            f.path.toLowerCase().includes(trimmed.toLowerCase()))
+          f.name.toLowerCase().includes(trimmed.toLowerCase()) ||
+          f.path.toLowerCase().includes(trimmed.toLowerCase())
+        )
         : [];
 
       if (groups.length === 0 && matchingFolders.length === 0) {
@@ -1050,30 +1166,45 @@ export class AudioInfoPlayer extends _Base {
       }
       const html = [
         ...groups.map((g) => this._renderSearchGroup(g.label, g.tracks)),
-        ...(matchingFolders.length > 0 ? [this._renderFolderSearchGroup(matchingFolders)] : []),
+        ...(matchingFolders.length > 0
+          ? [this._renderFolderSearchGroup(matchingFolders)]
+          : []),
       ].join("");
       this._setListContent(html);
     } catch (e) {
-      this._setListContent(`<div class="list-empty">${this._escHtml(String(e))}</div>`);
+      this._setListContent(
+        `<div class="list-empty">${this._escHtml(String(e))}</div>`,
+      );
     }
   }
 
   private _renderSearchGroup(label: string, tracks: AudioInfo[]): string {
-    const header =
-      `<div class="search-group-header">` +
-      `<span class="search-group-label">${this._escHtml(label)} (${tracks.length})</span>` +
-      `<button class="drill-add-all-btn" title="Add all to queue" data-group-label="${this._escAttr(label)}">⊕ Add All</button>` +
+    const header = `<div class="search-group-header">` +
+      `<span class="search-group-label">${
+        this._escHtml(label)
+      } (${tracks.length})</span>` +
+      `<button class="drill-add-all-btn" title="Add all to queue" data-group-label="${
+        this._escAttr(label)
+      }">⊕ Add All</button>` +
       `</div>`;
     const items = tracks.map((t) => {
-      const sub = [formatArtists(t.ByArtist), t.InAlbum].filter(Boolean).join(" · ");
+      const sub = [formatArtists(t.ByArtist), t.InAlbum].filter(Boolean).join(
+        " · ",
+      );
       return (
         `<div class="list-item">` +
         `<div class="list-item-main">` +
-        `<div class="list-item-title">${this._escHtml(t.Name || "(untitled)")}</div>` +
+        `<div class="list-item-title">${
+          this._escHtml(t.Name || "(untitled)")
+        }</div>` +
         (sub ? `<div class="list-item-sub">${this._escHtml(sub)}</div>` : "") +
         `</div>` +
-        `<button class="row-add-btn" title="Add to queue" data-search-track-id="${this._escAttr(t.ID)}">⊕</button>` +
-        `<button class="row-remove-btn" title="Remove from queue" data-remove-track-id="${this._escAttr(t.ID)}">⊖</button>` +
+        `<button class="row-add-btn" title="Add to queue" data-search-track-id="${
+          this._escAttr(t.ID)
+        }">⊕</button>` +
+        `<button class="row-remove-btn" title="Remove from queue" data-remove-track-id="${
+          this._escAttr(t.ID)
+        }">⊖</button>` +
         `</div>`
       );
     }).join("");
@@ -1081,17 +1212,20 @@ export class AudioInfoPlayer extends _Base {
   }
 
   private _renderFolderSearchGroup(folders: FolderEntry[]): string {
-    const header =
-      `<div class="search-group-header">` +
+    const header = `<div class="search-group-header">` +
       `<span class="search-group-label">Folders (${folders.length})</span>` +
       `</div>`;
     const items = folders.map((f) =>
       `<div class="list-item">` +
       `<div class="list-item-main">` +
       `<div class="list-item-title">${this._escHtml(f.name)}</div>` +
-      `<div class="list-item-sub">${this._escHtml(f.path)} · ${f.trackCount} track${f.trackCount !== 1 ? "s" : ""}</div>` +
+      `<div class="list-item-sub">${
+        this._escHtml(f.path)
+      } · ${f.trackCount} track${f.trackCount !== 1 ? "s" : ""}</div>` +
       `</div>` +
-      `<button class="row-add-btn" title="Add to queue" data-add-tab="folders" data-add-item="${this._escAttr(f.path)}">⊕</button>` +
+      `<button class="row-add-btn" title="Add to queue" data-add-tab="folders" data-add-item="${
+        this._escAttr(f.path)
+      }">⊕</button>` +
       `</div>`
     ).join("");
     return `<div class="search-group">${header}${items}</div>`;
@@ -1116,18 +1250,28 @@ export class AudioInfoPlayer extends _Base {
       this._setListContent('<div class="list-empty">No items found</div>');
       return;
     }
-    const jumpBar = renderJumpBar(new Set(albums.flatMap((a) => jumpLetters(a.displayName))));
+    const jumpBar = renderJumpBar(
+      new Set(albums.flatMap((a) => jumpLetters(a.displayName))),
+    );
     this._setListContent(
       jumpBar +
-      albums
-        .map(
-          (a) =>
-            `<div class="list-item" data-jump-letter="${jumpLetters(a.displayName).join(" ")}" data-browse-tab="albums" data-browse-item="${this._escAttr(a.dir)}" data-browse-label="${this._escAttr(a.displayName)}">` +
-            `<div class="list-item-main"><div class="list-item-title">${this._escHtml(a.displayName)}</div></div>` +
-            `<button class="row-add-btn" title="Add to queue" data-add-tab="albums" data-add-item="${this._escAttr(a.dir)}">⊕</button>` +
-            `</div>`,
-        )
-        .join(""),
+        albums
+          .map(
+            (a) =>
+              `<div class="list-item" data-jump-letter="${
+                jumpLetters(a.displayName).join(" ")
+              }" data-browse-tab="albums" data-browse-item="${
+                this._escAttr(a.dir)
+              }" data-browse-label="${this._escAttr(a.displayName)}">` +
+              `<div class="list-item-main"><div class="list-item-title">${
+                this._escHtml(a.displayName)
+              }</div></div>` +
+              `<button class="row-add-btn" title="Add to queue" data-add-tab="albums" data-add-item="${
+                this._escAttr(a.dir)
+              }">⊕</button>` +
+              `</div>`,
+          )
+          .join(""),
     );
   }
 
@@ -1136,18 +1280,28 @@ export class AudioInfoPlayer extends _Base {
       this._setListContent('<div class="list-empty">No items found</div>');
       return;
     }
-    const jumpBar = renderJumpBar(new Set(items.flatMap((item) => jumpLetters(item))));
+    const jumpBar = renderJumpBar(
+      new Set(items.flatMap((item) => jumpLetters(item))),
+    );
     this._setListContent(
       jumpBar +
-      items
-        .map(
-          (item) =>
-            `<div class="list-item" data-jump-letter="${jumpLetters(item).join(" ")}" data-browse-tab="${this._escAttr(tab)}" data-browse-item="${this._escAttr(item)}">` +
-            `<div class="list-item-main"><div class="list-item-title">${this._escHtml(item)}</div></div>` +
-            `<button class="row-add-btn" title="Add to queue" data-add-tab="${this._escAttr(tab)}" data-add-item="${this._escAttr(item)}">⊕</button>` +
-            `</div>`,
-        )
-        .join(""),
+        items
+          .map(
+            (item) =>
+              `<div class="list-item" data-jump-letter="${
+                jumpLetters(item).join(" ")
+              }" data-browse-tab="${this._escAttr(tab)}" data-browse-item="${
+                this._escAttr(item)
+              }">` +
+              `<div class="list-item-main"><div class="list-item-title">${
+                this._escHtml(item)
+              }</div></div>` +
+              `<button class="row-add-btn" title="Add to queue" data-add-tab="${
+                this._escAttr(tab)
+              }" data-add-item="${this._escAttr(item)}">⊕</button>` +
+              `</div>`,
+          )
+          .join(""),
     );
   }
 
@@ -1162,7 +1316,9 @@ export class AudioInfoPlayer extends _Base {
       return;
     }
 
-    const tree = buildFolderTree(folders).sort((a, b) => a.path.localeCompare(b.path));
+    const tree = buildFolderTree(folders).sort((a, b) =>
+      a.path.localeCompare(b.path)
+    );
 
     let html = "";
     for (const node of tree) {
@@ -1172,16 +1328,26 @@ export class AudioInfoPlayer extends _Base {
       const tCls = selfEnabled ? " on" : "";
       const addDis = effectiveEnabled ? "" : " disabled";
       const rowCls = node.depth > 0 ? " folder-child" : "";
-      const indent = node.depth > 0 ? ` style="padding-left: ${node.depth * 1.25}em"` : "";
+      const indent = node.depth > 0
+        ? ` style="padding-left: ${node.depth * 1.25}em"`
+        : "";
       html +=
-        `<div class="list-item${rowCls}" data-browse-tab="folders" data-browse-item="${this._escAttr(node.path)}">` +
+        `<div class="list-item${rowCls}" data-browse-tab="folders" data-browse-item="${
+          this._escAttr(node.path)
+        }">` +
         `<div class="list-item-main"${indent}>` +
         `<div class="list-item-title">${this._escHtml(name)}</div>` +
-        `<div class="list-item-sub">${node.totalCount} track${node.totalCount !== 1 ? "s" : ""}` +
+        `<div class="list-item-sub">${node.totalCount} track${
+          node.totalCount !== 1 ? "s" : ""
+        }` +
         (node.hasChildren ? ` · sub-folders` : "") +
         `</div></div>` +
-        `<button class="folder-toggle-btn${tCls}" data-toggle-folder="${this._escAttr(node.path)}">${selfEnabled ? "ON" : "OFF"}</button>` +
-        `<button class="row-add-btn"${addDis} title="Add to queue" data-add-tab="folders" data-add-item="${this._escAttr(node.path)}">⊕</button>` +
+        `<button class="folder-toggle-btn${tCls}" data-toggle-folder="${
+          this._escAttr(node.path)
+        }">${selfEnabled ? "ON" : "OFF"}</button>` +
+        `<button class="row-add-btn"${addDis} title="Add to queue" data-add-tab="folders" data-add-item="${
+          this._escAttr(node.path)
+        }">⊕</button>` +
         `</div>`;
     }
 
@@ -1198,14 +1364,274 @@ export class AudioInfoPlayer extends _Base {
         `<div class="list-item">` +
         `<div class="list-item-main">` +
         `<div class="list-item-title">${this._escHtml(pl.name)}</div>` +
-        `<div class="list-item-sub">${pl.trackCount} track${pl.trackCount !== 1 ? "s" : ""}</div>` +
+        `<div class="list-item-sub">${pl.trackCount} track${
+          pl.trackCount !== 1 ? "s" : ""
+        }</div>` +
         `</div>` +
-        `<button class="row-add-btn" title="Load playlist into queue" data-playlist-load="${this._escAttr(pl.id)}">▶</button>` +
-        `<a class="row-add-btn" title="Export as OPML" href="${this._escAttr(this.api.opmlExportUrl(pl.id))}" download="${this._escAttr(pl.name)}.opml">⇩</a>` +
-        `<button class="row-remove-btn" title="Delete playlist" data-playlist-delete="${this._escAttr(pl.id)}">✕</button>` +
+        `<button class="row-add-btn" title="Load playlist into queue" data-playlist-load="${
+          this._escAttr(pl.id)
+        }">▶</button>` +
+        `<a class="row-add-btn" title="Export as OPML" href="${
+          this._escAttr(this.api.opmlExportUrl(pl.id))
+        }" download="${this._escAttr(pl.name)}.opml">⇩</a>` +
+        `<button class="row-remove-btn" title="Delete playlist" data-playlist-delete="${
+          this._escAttr(pl.id)
+        }">✕</button>` +
         `</div>`
       ).join(""),
     );
+  }
+
+  /** _loadPodcastsTab fetches subscriptions and synced shows in parallel and
+   * renders them as two stacked groups in the list panel: a Subscriptions
+   * group (read-only list plus an Add Subscription form) and a Shows group
+   * (each row drills down into that show's episodes). Callable directly
+   * (e.g. after adding a subscription) as well as from _loadTab.
+   */
+  private async _loadPodcastsTab(): Promise<void> {
+    try {
+      const [subs, shows] = await Promise.all([
+        this.api.listPodcastSubscriptions(),
+        this.api.listPodcastShows(),
+      ]);
+      this._setListContent(
+        `<div class="search-group">${
+          this._renderPodcastSubscriptions(subs)
+        }</div>` +
+          `<div class="search-group">` +
+          `<div class="search-group-header"><span class="search-group-label">Shows (${shows.length})</span></div>` +
+          this._renderPodcastShows(shows) +
+          `</div>`,
+      );
+    } catch (e) {
+      this._setListContent(
+        `<div class="list-empty">${this._escHtml(String(e))}</div>`,
+      );
+    }
+  }
+
+  private _renderPodcastSubscriptions(subs: Subscription[]): string {
+    const rows = subs.map((s) =>
+      `<div class="list-item">` +
+      `<div class="list-item-main">` +
+      `<div class="list-item-title">${this._escHtml(s.Label)}</div>` +
+      `<div class="list-item-sub">${this._escHtml(s.FeedURL)}</div>` +
+      `</div></div>`
+    ).join("");
+    return (
+      `<div class="search-group-header"><span class="search-group-label">Subscriptions (${subs.length})</span></div>` +
+      (rows ||
+        '<div class="list-empty">No subscriptions yet — add one below.</div>') +
+      `<div class="podcast-subscribe-row">` +
+      `<input type="text" class="podcast-subscribe-label" placeholder="Show label" />` +
+      `<input type="url" class="podcast-subscribe-url" placeholder="Feed URL" />` +
+      `<button class="lib-btn podcast-subscribe-btn">Add</button>` +
+      `</div>` +
+      `<span class="lib-status podcast-subscribe-status"></span>`
+    );
+  }
+
+  private _renderPodcastShows(shows: PodcastShowSummary[]): string {
+    if (shows.length === 0) {
+      return '<div class="list-empty">No synced shows yet — add a subscription above, then Sync Podcasts (Library panel).</div>';
+    }
+    return shows.map((s) =>
+      `<div class="list-item" data-podcast-show="${this._escAttr(s.label)}">` +
+      `<div class="list-item-main">` +
+      `<div class="list-item-title">${this._escHtml(s.label)}</div>` +
+      `<div class="list-item-sub">${s.episodeCount} episode${
+        s.episodeCount !== 1 ? "s" : ""
+      }` +
+      (s.lastError ? ` · error: ${this._escHtml(s.lastError)}` : "") +
+      `</div></div>` +
+      `</div>`
+    ).join("");
+  }
+
+  /** _drillDownPodcastShow fetches a show's episodes and renders them
+   * grouped by status (New / Downloaded / Listened) in the list panel.
+   */
+  private async _drillDownPodcastShow(label: string): Promise<void> {
+    this._setListContent('<div class="list-empty">Loading…</div>');
+    try {
+      const episodes = await this.api.listPodcastShowEpisodes(label);
+      this._showPodcastEpisodes(label, episodes);
+    } catch (e) {
+      this._setListContent(
+        `<div class="list-empty">${this._escHtml(String(e))}</div>`,
+      );
+    }
+  }
+
+  private _showPodcastEpisodes(
+    label: string,
+    episodes: PodcastEpisode[],
+  ): void {
+    this.podcastDrilldownLabel = label;
+    this.podcastEpisodesMap.clear();
+    for (const ep of episodes) this.podcastEpisodesMap.set(ep.ID, ep);
+
+    const backBar = `<div class="drill-back-bar">` +
+      `<button class="drill-back-btn" data-podcast-back>← Back</button>` +
+      `<span class="drill-context-label">🎙 ${this._escHtml(label)}</span>` +
+      `</div>`;
+
+    const groups: Array<{ title: string; items: PodcastEpisode[] }> = [
+      { title: "New", items: episodes.filter((e) => e.Status === "new") },
+      {
+        title: "Downloaded",
+        items: episodes.filter((e) => e.Status === "downloaded"),
+      },
+      {
+        title: "Listened",
+        items: episodes.filter((e) => e.Status === "listened"),
+      },
+    ].filter((g) => g.items.length > 0);
+
+    if (groups.length === 0) {
+      this._setListContent(
+        backBar + '<div class="list-empty">No episodes yet</div>',
+      );
+      return;
+    }
+
+    const body = groups.map((g) =>
+      `<div class="search-group-header"><span class="search-group-label">${g.title} (${g.items.length})</span></div>` +
+      g.items.map((ep) => this._renderPodcastEpisodeRow(ep)).join("")
+    ).join("");
+
+    this._setListContent(backBar + body);
+  }
+
+  private _renderPodcastEpisodeRow(ep: PodcastEpisode): string {
+    const sub = [
+      formatDuration(ep.Duration),
+      ep.Published ? new Date(ep.Published).toLocaleDateString() : "",
+    ].filter(Boolean).join(" · ");
+
+    const buttons: string[] = [];
+    if (ep.Status === "new") {
+      buttons.push(
+        `<button class="podcast-ep-btn" title="Download" data-podcast-download="${
+          this._escAttr(ep.ID)
+        }">⬇</button>`,
+      );
+    } else {
+      buttons.push(
+        `<button class="podcast-ep-btn" title="Add to queue" data-podcast-queue="${
+          this._escAttr(ep.ID)
+        }">⊕</button>`,
+      );
+      if (ep.Status === "listened") {
+        buttons.push(
+          `<button class="podcast-ep-btn" title="Mark unlistened" data-podcast-unlisten="${
+            this._escAttr(ep.ID)
+          }">↺</button>`,
+        );
+      } else {
+        buttons.push(
+          `<button class="podcast-ep-btn" title="Mark listened" data-podcast-listen="${
+            this._escAttr(ep.ID)
+          }">✓</button>`,
+        );
+      }
+      buttons.push(
+        `<button class="podcast-ep-btn${ep.Keep ? " podcast-keep-on" : ""}" ` +
+          `title="${ep.Keep ? "Un-keep" : "Keep (exempt from cleanup)"}" ` +
+          `data-podcast-keep="${this._escAttr(ep.ID)}">${
+            ep.Keep ? "★" : "☆"
+          }</button>`,
+      );
+      buttons.push(
+        `<button class="podcast-ep-btn" title="Migrate to library" data-podcast-migrate="${
+          this._escAttr(ep.ID)
+        }">⇪</button>`,
+      );
+    }
+    buttons.push(
+      `<button class="podcast-ep-remove-btn" title="Delete" data-podcast-delete="${
+        this._escAttr(ep.ID)
+      }">✕</button>`,
+    );
+
+    return (
+      `<div class="list-item">` +
+      `<div class="list-item-main">` +
+      `<div class="list-item-title">${
+        this._escHtml(ep.Title || "(untitled)")
+      }</div>` +
+      (sub ? `<div class="list-item-sub">${this._escHtml(sub)}</div>` : "") +
+      `</div>` +
+      buttons.join("") +
+      `</div>`
+    );
+  }
+
+  /** _handlePodcastEpisodeAction dispatches a click on one of an episode
+   * row's action buttons (identified by which data-podcast-* attribute is
+   * present) to the matching API call, then refreshes the current show's
+   * episode list so the row reflects the new state. Queueing is the one
+   * action that doesn't change episode state server-side, so it skips the
+   * refresh.
+   */
+  private async _handlePodcastEpisodeAction(btn: HTMLElement): Promise<void> {
+    try {
+      if (btn.dataset.podcastDownload !== undefined) {
+        await this.api.downloadPodcastEpisode(btn.dataset.podcastDownload);
+      } else if (btn.dataset.podcastQueue !== undefined) {
+        const ep = this.podcastEpisodesMap.get(btn.dataset.podcastQueue);
+        if (ep) this._addToQueue([podcastEpisodeToTrack(ep)]);
+        return;
+      } else if (btn.dataset.podcastListen !== undefined) {
+        await this.api.markPodcastEpisodeListened(btn.dataset.podcastListen);
+      } else if (btn.dataset.podcastUnlisten !== undefined) {
+        await this.api.markPodcastEpisodeUnlistened(
+          btn.dataset.podcastUnlisten,
+        );
+      } else if (btn.dataset.podcastKeep !== undefined) {
+        const ep = this.podcastEpisodesMap.get(btn.dataset.podcastKeep);
+        if (ep) await this.api.setPodcastEpisodeKeep(ep.ID, !ep.Keep);
+      } else if (btn.dataset.podcastMigrate !== undefined) {
+        const dest = prompt(
+          "Migrate to which folder under your audio library? (e.g. Classical/Lectures)",
+        );
+        if (dest === null || !dest.trim()) return;
+        await this.api.migratePodcastEpisode(
+          btn.dataset.podcastMigrate,
+          dest.trim(),
+        );
+      } else if (btn.dataset.podcastDelete !== undefined) {
+        if (!confirm("Delete this episode and its downloaded file?")) return;
+        await this.api.deletePodcastEpisode(btn.dataset.podcastDelete);
+      } else {
+        return;
+      }
+      await this._drillDownPodcastShow(this.podcastDrilldownLabel);
+    } catch (e) {
+      console.warn("podcast episode action:", String(e));
+    }
+  }
+
+  private async _handleAddPodcastSubscription(): Promise<void> {
+    const labelInput = this.qs<HTMLInputElement>(".podcast-subscribe-label");
+    const urlInput = this.qs<HTMLInputElement>(".podcast-subscribe-url");
+    const status = this.qs<HTMLElement>(".podcast-subscribe-status");
+    const label = labelInput.value.trim();
+    const feedURL = urlInput.value.trim();
+    if (!label || !feedURL) {
+      status.className = "lib-status error";
+      status.textContent = "Label and feed URL are both required.";
+      return;
+    }
+    status.className = "lib-status";
+    status.textContent = "Adding…";
+    try {
+      await this.api.addPodcastSubscription(label, feedURL);
+      await this._loadPodcastsTab();
+    } catch (e) {
+      status.className = "lib-status error";
+      status.textContent = String(e);
+    }
   }
 
   /** _showDrilldown renders a track list inside the list panel with a back bar.
@@ -1219,8 +1645,7 @@ export class AudioInfoPlayer extends _Base {
   private _showDrilldown(tracks: AudioInfo[], label: string): void {
     this.drilldownTracks = tracks;
     this.drilldownLabel = label;
-    const backBar =
-      `<div class="drill-back-bar">` +
+    const backBar = `<div class="drill-back-bar">` +
       `<button class="drill-back-btn">← Back</button>` +
       `<span class="drill-context-label">${this._escHtml(label)}</span>` +
       (tracks.length > 0
@@ -1228,17 +1653,25 @@ export class AudioInfoPlayer extends _Base {
         : "") +
       `</div>`;
     if (tracks.length === 0) {
-      this._setListContent(backBar + '<div class="list-empty">No results</div>');
+      this._setListContent(
+        backBar + '<div class="list-empty">No results</div>',
+      );
       return;
     }
     const items = tracks
       .map((t, i) => {
-        const sub = [formatArtists(t.ByArtist), t.InAlbum].filter(Boolean).join(" · ");
+        const sub = [formatArtists(t.ByArtist), t.InAlbum].filter(Boolean).join(
+          " · ",
+        );
         return (
           `<div class="list-item">` +
           `<div class="list-item-main">` +
-          `<div class="list-item-title">${this._escHtml(t.Name || "(untitled)")}</div>` +
-          (sub ? `<div class="list-item-sub">${this._escHtml(sub)}</div>` : "") +
+          `<div class="list-item-title">${
+            this._escHtml(t.Name || "(untitled)")
+          }</div>` +
+          (sub
+            ? `<div class="list-item-sub">${this._escHtml(sub)}</div>`
+            : "") +
           `</div>` +
           `<button class="row-add-btn" title="Add to queue" data-drilldown-index="${i}">⊕</button>` +
           `</div>`
@@ -1255,9 +1688,11 @@ export class AudioInfoPlayer extends _Base {
     const label = `📁 ${parts[parts.length - 1] || path}`;
     this.api.listFolderTracks(path)
       .then((tracks) => this._showDrilldown(tracks, label))
-      .catch((err) => this._setListContent(
-        `<div class="list-empty">${this._escHtml(String(err))}</div>`,
-      ));
+      .catch((err) =>
+        this._setListContent(
+          `<div class="list-empty">${this._escHtml(String(err))}</div>`,
+        )
+      );
   }
 
   /** _drillDownAlbum fetches all tracks under an album directory and renders them
@@ -1269,9 +1704,11 @@ export class AudioInfoPlayer extends _Base {
     this._setListContent('<div class="list-empty">Loading…</div>');
     this.api.listAlbumTracks(dir)
       .then((tracks) => this._showDrilldown(tracks, label))
-      .catch((err) => this._setListContent(
-        `<div class="list-empty">${this._escHtml(String(err))}</div>`,
-      ));
+      .catch((err) =>
+        this._setListContent(
+          `<div class="list-empty">${this._escHtml(String(err))}</div>`,
+        )
+      );
   }
 
   /** _drillDown fetches tracks for a browse item and renders them in the list panel. */
@@ -1281,25 +1718,37 @@ export class AudioInfoPlayer extends _Base {
     const label = `${tab}: ${item}`;
     this.api.search(q)
       .then((tracks) => this._showDrilldown(tracks, label))
-      .catch((err) => this._setListContent(
-        `<div class="list-empty">${this._escHtml(String(err))}</div>`,
-      ));
+      .catch((err) =>
+        this._setListContent(
+          `<div class="list-empty">${this._escHtml(String(err))}</div>`,
+        )
+      );
+  }
+
+  /** _audioSrcFor resolves the streaming URL for a queue entry: the podcast
+   * episode audio endpoint for a podcast track, the regular library audio
+   * endpoint for everything else. See podcastEpisodeToTrack/QueueTrack.
+   */
+  private _audioSrcFor(info: QueueTrack): string {
+    return info.SourceType === "podcast"
+      ? this.api.podcastEpisodeAudioUrl(info.ID)
+      : this.api.audioUrl(info.ID);
   }
 
   /** _addToQueue appends tracks to the playback queue without starting playback.
    * When the queue was empty the first track is primed in the player but not played.
    *
    * Parameters:
-   *   tracks (AudioInfo[]) — tracks to append
+   *   tracks (QueueTrack[]) — tracks to append
    */
-  private _addToQueue(tracks: AudioInfo[]): void {
+  private _addToQueue(tracks: QueueTrack[]): void {
     if (tracks.length === 0) return;
     const wasEmpty = this.queue.length === 0 && this.currentIndex < 0;
     this.queue = [...this.queue, ...tracks];
     if (wasEmpty) {
       this.hasPlaybackStarted = false;
       this.currentIndex = 0;
-      this.audioEl.src = this.api.audioUrl(this.queue[0].ID);
+      this.audioEl.src = this._audioSrcFor(this.queue[0]);
       this._showNowPlaying(this.queue[0]);
       this._refreshPlayState(false);
     }
@@ -1319,7 +1768,7 @@ export class AudioInfoPlayer extends _Base {
     this.queue = shuffleQueue(this.queue, this.currentIndex, preserveCurrent);
     if (!preserveCurrent && this.queue.length > 0) {
       this.currentIndex = 0;
-      this.audioEl.src = this.api.audioUrl(this.queue[0].ID);
+      this.audioEl.src = this._audioSrcFor(this.queue[0]);
       this._showNowPlaying(this.queue[0]);
       this._refreshPlayState(false);
     }
@@ -1332,7 +1781,7 @@ export class AudioInfoPlayer extends _Base {
     if (index < 0 || index >= this.queue.length) return;
     this.currentIndex = index;
     const info = this.queue[index];
-    this.audioEl.src = this.api.audioUrl(info.ID);
+    this.audioEl.src = this._audioSrcFor(info);
     this.audioEl.play().catch(() => {});
     this._showNowPlaying(info);
     this._updateQueuePanel();
@@ -1340,7 +1789,8 @@ export class AudioInfoPlayer extends _Base {
 
   private _showNowPlaying(info: AudioInfo): void {
     this.qs(".track-title").textContent = info.Name || "(untitled)";
-    const sub = [formatArtists(info.ByArtist), info.InAlbum].filter(Boolean).join(" — ");
+    const sub = [formatArtists(info.ByArtist), info.InAlbum].filter(Boolean)
+      .join(" — ");
     this.qs(".track-sub").textContent = sub;
     const parts = (info.ContentURL ?? "").replace(/\\/g, "/").split("/");
     const folder = parts.length >= 2 ? parts[parts.length - 2] : "";
@@ -1368,7 +1818,10 @@ export class AudioInfoPlayer extends _Base {
       title.textContent = "Queue";
       return;
     }
-    const totalSecs = this.queue.reduce((sum, t) => sum + parseDurationSecs(t.Duration), 0);
+    const totalSecs = this.queue.reduce(
+      (sum, t) => sum + parseDurationSecs(t.Duration),
+      0,
+    );
     const totalStr = totalSecs > 0 ? this._fmtSecs(totalSecs) : "";
     title.textContent = totalStr
       ? `Queue (${this.queue.length} · ~${totalStr})`
@@ -1378,7 +1831,9 @@ export class AudioInfoPlayer extends _Base {
         const cls = i === this.currentIndex ? " current" : "";
         return (
           `<div class="queue-item${cls}" data-queue-index="${i}">` +
-          `<span class="queue-item-name">${this._escHtml(t.Name || "(untitled)")}</span>` +
+          `<span class="queue-item-name">${
+            this._escHtml(t.Name || "(untitled)")
+          }</span>` +
           `<button class="queue-remove-btn" data-remove-index="${i}">×</button>` +
           `</div>`
         );
@@ -1395,6 +1850,11 @@ export class AudioInfoPlayer extends _Base {
     });
     this.audioEl.addEventListener("pause", () => this._refreshPlayState(false));
     this.audioEl.addEventListener("ended", () => {
+      const finished = this.queue[this.currentIndex];
+      if (finished?.SourceType === "podcast") {
+        this.api.markPodcastEpisodeListened(finished.ID)
+          .catch((e) => console.warn("mark podcast episode listened:", e));
+      }
       this.queue.splice(this.currentIndex, 1);
       if (this.currentIndex < this.queue.length) {
         this._playIndex(this.currentIndex);
@@ -1409,12 +1869,16 @@ export class AudioInfoPlayer extends _Base {
       if (this.seekDragging || isNaN(this.audioEl.duration)) return;
       const pct = (this.audioEl.currentTime / this.audioEl.duration) * 100;
       (this.qs<HTMLInputElement>(".seek-bar")).value = String(pct);
-      this.qs(".current-time").textContent = this._fmtSecs(this.audioEl.currentTime);
+      this.qs(".current-time").textContent = this._fmtSecs(
+        this.audioEl.currentTime,
+      );
       this.qs(".total-time").textContent = this._fmtSecs(this.audioEl.duration);
     });
     this.audioEl.addEventListener("loadedmetadata", () => {
       if (!isNaN(this.audioEl.duration)) {
-        this.qs(".total-time").textContent = this._fmtSecs(this.audioEl.duration);
+        this.qs(".total-time").textContent = this._fmtSecs(
+          this.audioEl.duration,
+        );
       }
     });
   }
@@ -1429,22 +1893,62 @@ export class AudioInfoPlayer extends _Base {
 
     // Search
     const searchInput = this.qs<HTMLInputElement>(".search-bar input");
-    this.qs(".search-btn").addEventListener("click", () => this._runSearch(searchInput.value));
+    this.qs(".search-btn").addEventListener(
+      "click",
+      () => this._runSearch(searchInput.value),
+    );
     searchInput.addEventListener("keydown", (e: Event) => {
-      if ((e as KeyboardEvent).key === "Enter") this._runSearch(searchInput.value);
+      if ((e as KeyboardEvent).key === "Enter") {
+        this._runSearch(searchInput.value);
+      }
     });
 
     // Browse/result list clicks (delegated on list-panel)
     this.qs(".list-panel").addEventListener("click", (e: Event) => {
+      // Podcast episode action buttons (download/queue/listen/keep/migrate/delete).
+      const podcastBtn = (e.target as Element).closest<HTMLElement>(
+        "[data-podcast-download], [data-podcast-queue], [data-podcast-listen], " +
+          "[data-podcast-unlisten], [data-podcast-keep], [data-podcast-migrate], [data-podcast-delete]",
+      );
+      if (podcastBtn) {
+        this._handlePodcastEpisodeAction(podcastBtn);
+        return;
+      }
+
+      // Add Subscription button.
+      if ((e.target as Element).closest(".podcast-subscribe-btn")) {
+        this._handleAddPodcastSubscription();
+        return;
+      }
+
+      // Back to the Podcasts tab's Subscriptions/Shows view.
+      if ((e.target as Element).closest("[data-podcast-back]")) {
+        this._loadTab("podcasts");
+        return;
+      }
+
+      // Show row click → drill down into that show's episodes.
+      const showEl = (e.target as Element).closest<HTMLElement>(
+        "[data-podcast-show]",
+      );
+      if (showEl) {
+        this._drillDownPodcastShow(showEl.dataset.podcastShow ?? "");
+        return;
+      }
+
       // A-Z jump bar button — scroll the first matching row into view.
-      const jumpBtn = (e.target as Element).closest<HTMLButtonElement>("[data-jump-to]");
+      const jumpBtn = (e.target as Element).closest<HTMLButtonElement>(
+        "[data-jump-to]",
+      );
       if (jumpBtn) {
         if (jumpBtn.disabled) return;
         const letter = jumpBtn.dataset.jumpTo!;
         const panel = this.qs<HTMLElement>(".list-panel");
         // ~= matches a whitespace-separated token list, since a row may be
         // reachable from two letters (its sorted key and its literal first word).
-        const target = panel.querySelector<HTMLElement>(`[data-jump-letter~="${letter}"]`);
+        const target = panel.querySelector<HTMLElement>(
+          `[data-jump-letter~="${letter}"]`,
+        );
         if (target) {
           // The jump bar is sticky, so a plain scrollIntoView would land the
           // target right underneath it. Measure the bar's actual height
@@ -1458,7 +1962,9 @@ export class AudioInfoPlayer extends _Base {
       }
 
       // Folder toggle button.
-      const toggleBtn = (e.target as Element).closest<HTMLElement>("[data-toggle-folder]");
+      const toggleBtn = (e.target as Element).closest<HTMLElement>(
+        "[data-toggle-folder]",
+      );
       if (toggleBtn) {
         const path = toggleBtn.dataset.toggleFolder!;
         this.folderEnabled.set(path, !this._isFolderEnabled(path));
@@ -1468,7 +1974,9 @@ export class AudioInfoPlayer extends _Base {
         // Re-render the folder tree immediately.
         if (this.folderCache) this._renderFolderList(this.folderCache);
         // Refresh whichever browse tab is active so exclusions take effect.
-        const activeTab = this.shadow.querySelector<HTMLButtonElement>(".tab.active");
+        const activeTab = this.shadow.querySelector<HTMLButtonElement>(
+          ".tab.active",
+        );
         const activeTabName = activeTab?.dataset.tab;
         if (activeTabName && activeTabName !== "folders") {
           this._loadTab(activeTabName);
@@ -1477,7 +1985,9 @@ export class AudioInfoPlayer extends _Base {
       }
 
       // Playlist load button.
-      const plLoadBtn = (e.target as Element).closest<HTMLElement>("[data-playlist-load]");
+      const plLoadBtn = (e.target as Element).closest<HTMLElement>(
+        "[data-playlist-load]",
+      );
       if (plLoadBtn) {
         const id = plLoadBtn.dataset.playlistLoad!;
         this.api.loadPlaylist(id)
@@ -1487,7 +1997,9 @@ export class AudioInfoPlayer extends _Base {
       }
 
       // Playlist delete button.
-      const plDelBtn = (e.target as Element).closest<HTMLElement>("[data-playlist-delete]");
+      const plDelBtn = (e.target as Element).closest<HTMLElement>(
+        "[data-playlist-delete]",
+      );
       if (plDelBtn) {
         const id = plDelBtn.dataset.playlistDelete!;
         if (!confirm("Delete this playlist?")) return;
@@ -1498,7 +2010,9 @@ export class AudioInfoPlayer extends _Base {
       }
 
       // ⊖ remove-from-queue button.
-      const removeBtn = (e.target as Element).closest<HTMLElement>(".row-remove-btn");
+      const removeBtn = (e.target as Element).closest<HTMLElement>(
+        ".row-remove-btn",
+      );
       if (removeBtn) {
         const id = removeBtn.dataset.removeTrackId ?? "";
         const idx = this.queue.findIndex((t) => t.ID === id);
@@ -1561,10 +2075,14 @@ export class AudioInfoPlayer extends _Base {
       }
 
       // Add-all button — search group (has data-group-label) or drilldown.
-      const addAllBtn = (e.target as Element).closest<HTMLElement>(".drill-add-all-btn");
+      const addAllBtn = (e.target as Element).closest<HTMLElement>(
+        ".drill-add-all-btn",
+      );
       if (addAllBtn) {
         if (addAllBtn.dataset.groupLabel !== undefined) {
-          this._addToQueue(this.searchGroups.get(addAllBtn.dataset.groupLabel) ?? []);
+          this._addToQueue(
+            this.searchGroups.get(addAllBtn.dataset.groupLabel) ?? [],
+          );
         } else {
           this._addToQueue(this.drilldownTracks);
         }
@@ -1592,7 +2110,9 @@ export class AudioInfoPlayer extends _Base {
     // Queue clicks (delegated on queue-list)
     this.qs(".queue-list").addEventListener("click", (e: Event) => {
       // Remove button
-      const removeBtn = (e.target as Element).closest<HTMLElement>(".queue-remove-btn");
+      const removeBtn = (e.target as Element).closest<HTMLElement>(
+        ".queue-remove-btn",
+      );
       if (removeBtn) {
         const idx = parseInt(removeBtn.dataset.removeIndex ?? "-1", 10);
         if (idx < 0 || idx >= this.queue.length) return;
@@ -1640,18 +2160,25 @@ export class AudioInfoPlayer extends _Base {
       if (this.currentIndex > 0) this._playIndex(this.currentIndex - 1);
     });
     this.qs(".next-btn").addEventListener("click", () => {
-      if (this.currentIndex < this.queue.length - 1) this._playIndex(this.currentIndex + 1);
+      if (this.currentIndex < this.queue.length - 1) {
+        this._playIndex(this.currentIndex + 1);
+      }
     });
 
     // Seek bar
     const seekBar = this.qs<HTMLInputElement>(".seek-bar");
-    seekBar.addEventListener("mousedown", () => { this.seekDragging = true; });
+    seekBar.addEventListener("mousedown", () => {
+      this.seekDragging = true;
+    });
     seekBar.addEventListener("input", () => {
       if (!isNaN(this.audioEl.duration)) {
-        this.audioEl.currentTime = (parseFloat(seekBar.value) / 100) * this.audioEl.duration;
+        this.audioEl.currentTime = (parseFloat(seekBar.value) / 100) *
+          this.audioEl.duration;
       }
     });
-    seekBar.addEventListener("mouseup", () => { this.seekDragging = false; });
+    seekBar.addEventListener("mouseup", () => {
+      this.seekDragging = false;
+    });
 
     // Volume
     const volBar = this.qs<HTMLInputElement>(".volume-bar");
@@ -1678,14 +2205,28 @@ export class AudioInfoPlayer extends _Base {
     });
 
     // Shuffle queue
-    this.qs(".shuffle-btn").addEventListener("click", () => this._shuffleQueue());
+    this.qs(".shuffle-btn").addEventListener(
+      "click",
+      () => this._shuffleQueue(),
+    );
 
     // Save queue as playlist
-    this.qs(".save-playlist-btn").addEventListener("click", () => this._saveQueueAsPlaylist());
+    this.qs(".save-playlist-btn").addEventListener(
+      "click",
+      () => this._saveQueueAsPlaylist(),
+    );
 
     // Scan / Sweep — capture elements here for the same reason as share.
     this.qs(".scan-btn").addEventListener("click", () => this._startScan());
     this.qs(".sweep-btn").addEventListener("click", () => this._startSweep());
+    this.qs(".podcast-sync-btn").addEventListener(
+      "click",
+      () => this._startPodcastSync(),
+    );
+    this.qs(".podcast-sweep-btn").addEventListener(
+      "click",
+      () => this._startPodcastSweep(),
+    );
 
     // Share — capture elements once so async handlers never re-query a potentially stale DOM.
     const shareBtn = this.qs<HTMLButtonElement>(".share-btn");
@@ -1722,15 +2263,27 @@ export class AudioInfoPlayer extends _Base {
     // picker; the actual upload happens on the input's change event.
     const opmlFileInput = this.qs<HTMLInputElement>(".opml-file-input");
     const opmlStatus = this.qs<HTMLElement>(".opml-import-status");
-    this.qs(".import-opml-btn").addEventListener("click", () => opmlFileInput.click());
-    opmlFileInput.addEventListener("change", () => this._importPlaylistOPML(opmlFileInput, opmlStatus));
+    this.qs(".import-opml-btn").addEventListener(
+      "click",
+      () => opmlFileInput.click(),
+    );
+    opmlFileInput.addEventListener(
+      "change",
+      () => this._importPlaylistOPML(opmlFileInput, opmlStatus),
+    );
 
     // Build Playlist… — prompts for criteria, queues matching tracks.
     const buildStatus = this.qs<HTMLElement>(".build-playlist-status");
-    this.qs(".build-playlist-btn").addEventListener("click", () => this._buildPlaylistFromCriteria(buildStatus));
+    this.qs(".build-playlist-btn").addEventListener(
+      "click",
+      () => this._buildPlaylistFromCriteria(buildStatus),
+    );
 
     // Shutdown
-    this.qs(".shutdown-btn").addEventListener("click", () => this._requestShutdown());
+    this.qs(".shutdown-btn").addEventListener(
+      "click",
+      () => this._requestShutdown(),
+    );
   }
 
   // ---- share actions ------------------------------------------------------
@@ -1760,19 +2313,25 @@ export class AudioInfoPlayer extends _Base {
         `<span class="share-url-text">${this._escHtml(s.share_url)}</span> ` +
         `<button class="share-copy-btn lib-btn">Copy</button> ` +
         `<button class="share-disable-btn lib-btn">Disable</button>`;
-      shareStatus.querySelector(".share-copy-btn")?.addEventListener("click", () => {
-        navigator.clipboard?.writeText(s.share_url).catch(() => {});
-      });
-      shareStatus.querySelector(".share-disable-btn")?.addEventListener("click", async () => {
-        shareStatus.textContent = "Stopping…";
-        try {
-          await this.api.shareOff();
-          await this._pollShareStatus(shareBtn, shareStatus, false);
-        } catch (e) {
-          shareStatus.className = "lib-status error";
-          shareStatus.textContent = String(e);
-        }
-      });
+      shareStatus.querySelector(".share-copy-btn")?.addEventListener(
+        "click",
+        () => {
+          navigator.clipboard?.writeText(s.share_url).catch(() => {});
+        },
+      );
+      shareStatus.querySelector(".share-disable-btn")?.addEventListener(
+        "click",
+        async () => {
+          shareStatus.textContent = "Stopping…";
+          try {
+            await this.api.shareOff();
+            await this._pollShareStatus(shareBtn, shareStatus, false);
+          } catch (e) {
+            shareStatus.className = "lib-status error";
+            shareStatus.textContent = String(e);
+          }
+        },
+      );
     } else {
       shareBtn.disabled = false;
       shareBtn.textContent = "Share";
@@ -1804,23 +2363,33 @@ export class AudioInfoPlayer extends _Base {
     addresses: string[],
   ): void {
     const opts = addresses
-      .map((a) => `<option value="${this._escAttr(a)}">${this._escHtml(a)}</option>`)
+      .map((a) =>
+        `<option value="${this._escAttr(a)}">${this._escHtml(a)}</option>`
+      )
       .join("");
     shareStatus.className = "lib-status";
     shareStatus.innerHTML =
       `<select class="share-addr-select">${opts}</select> ` +
       `<button class="share-confirm-btn lib-btn">Enable</button> ` +
       `<button class="share-cancel-btn lib-btn">Cancel</button>`;
-    shareStatus.querySelector(".share-confirm-btn")?.addEventListener("click", async () => {
-      const sel = shareStatus.querySelector<HTMLSelectElement>(".share-addr-select");
-      const addr = sel?.value ?? "";
-      if (addr) await this._enableShare(shareBtn, shareStatus, addr);
-    });
-    shareStatus.querySelector(".share-cancel-btn")?.addEventListener("click", () => {
-      shareBtn.disabled = false;
-      shareStatus.className = "lib-status";
-      shareStatus.innerHTML = "";
-    });
+    shareStatus.querySelector(".share-confirm-btn")?.addEventListener(
+      "click",
+      async () => {
+        const sel = shareStatus.querySelector<HTMLSelectElement>(
+          ".share-addr-select",
+        );
+        const addr = sel?.value ?? "";
+        if (addr) await this._enableShare(shareBtn, shareStatus, addr);
+      },
+    );
+    shareStatus.querySelector(".share-cancel-btn")?.addEventListener(
+      "click",
+      () => {
+        shareBtn.disabled = false;
+        shareStatus.className = "lib-status";
+        shareStatus.innerHTML = "";
+      },
+    );
   }
 
   private _pollShareStatus(
@@ -1868,7 +2437,11 @@ export class AudioInfoPlayer extends _Base {
       });
   }
 
-  private _pollScan(btn: HTMLButtonElement, status: HTMLElement, startedAt: number): void {
+  private _pollScan(
+    btn: HTMLButtonElement,
+    status: HTMLElement,
+    startedAt: number,
+  ): void {
     if (this.scanPollTimer) clearInterval(this.scanPollTimer);
     this.scanPollTimer = setInterval(async () => {
       try {
@@ -1878,7 +2451,9 @@ export class AudioInfoPlayer extends _Base {
           btn.disabled = false;
           status.className = "lib-status ok";
           status.textContent = "Scan complete";
-          const activeTab = this.shadow.querySelector<HTMLButtonElement>(".tab.active");
+          const activeTab = this.shadow.querySelector<HTMLButtonElement>(
+            ".tab.active",
+          );
           if (activeTab?.dataset.tab) this._loadTab(activeTab.dataset.tab);
         } else if (s.status === "error") {
           clearInterval(this.scanPollTimer);
@@ -1917,7 +2492,11 @@ export class AudioInfoPlayer extends _Base {
       });
   }
 
-  private _pollSweep(btn: HTMLButtonElement, status: HTMLElement, startedAt: number): void {
+  private _pollSweep(
+    btn: HTMLButtonElement,
+    status: HTMLElement,
+    startedAt: number,
+  ): void {
     if (this.sweepPollTimer) clearInterval(this.sweepPollTimer);
     this.sweepPollTimer = setInterval(async () => {
       try {
@@ -1948,8 +2527,122 @@ export class AudioInfoPlayer extends _Base {
     }, 1500) as unknown as number;
   }
 
+  private _startPodcastSync(): void {
+    const btn = this.qs<HTMLButtonElement>(".podcast-sync-btn");
+    const status = this.qs<HTMLElement>(".podcast-sync-status");
+    btn.disabled = true;
+    status.className = "lib-status";
+    status.textContent = "Starting…";
+    this.api.startPodcastSync()
+      .then((s) => {
+        this._pollPodcastSync(btn, status, new Date(s.started_at).getTime());
+      })
+      .catch((e) => {
+        btn.disabled = false;
+        status.className = "lib-status error";
+        status.textContent = String(e);
+      });
+  }
+
+  private _pollPodcastSync(
+    btn: HTMLButtonElement,
+    status: HTMLElement,
+    startedAt: number,
+  ): void {
+    if (this.podcastSyncPollTimer) clearInterval(this.podcastSyncPollTimer);
+    this.podcastSyncPollTimer = setInterval(async () => {
+      try {
+        const s = await this.api.podcastSyncStatus();
+        if (s.status === "completed") {
+          clearInterval(this.podcastSyncPollTimer);
+          btn.disabled = false;
+          const n = s.new_episodes ?? 0;
+          const feeds = s.feeds_checked ?? 0;
+          status.className = "lib-status ok";
+          status.textContent = `${n} new episode${
+            n !== 1 ? "s" : ""
+          } across ${feeds} feed${feeds !== 1 ? "s" : ""}`;
+          if (this.currentBrowseTab === "podcasts") this._loadTab("podcasts");
+        } else if (s.status === "error") {
+          clearInterval(this.podcastSyncPollTimer);
+          btn.disabled = false;
+          status.className = "lib-status error";
+          status.textContent = `Error: ${s.error ?? "unknown"}`;
+        } else if (s.status === "idle") {
+          clearInterval(this.podcastSyncPollTimer);
+          btn.disabled = false;
+          status.className = "lib-status";
+          status.textContent = "";
+        } else {
+          const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+          status.textContent = `Syncing… (${elapsed}s)`;
+        }
+      } catch (e) {
+        console.warn("podcast sync poll:", e);
+      }
+    }, 1500) as unknown as number;
+  }
+
+  private _startPodcastSweep(): void {
+    const btn = this.qs<HTMLButtonElement>(".podcast-sweep-btn");
+    const status = this.qs<HTMLElement>(".podcast-sweep-status");
+    btn.disabled = true;
+    status.className = "lib-status";
+    status.textContent = "Starting…";
+    this.api.startPodcastSweep()
+      .then((s) => {
+        this._pollPodcastSweep(btn, status, new Date(s.started_at).getTime());
+      })
+      .catch((e) => {
+        btn.disabled = false;
+        status.className = "lib-status error";
+        status.textContent = String(e);
+      });
+  }
+
+  private _pollPodcastSweep(
+    btn: HTMLButtonElement,
+    status: HTMLElement,
+    startedAt: number,
+  ): void {
+    if (this.podcastSweepPollTimer) clearInterval(this.podcastSweepPollTimer);
+    this.podcastSweepPollTimer = setInterval(async () => {
+      try {
+        const s = await this.api.podcastSweepStatus();
+        if (s.status === "completed") {
+          clearInterval(this.podcastSweepPollTimer);
+          btn.disabled = false;
+          const n = s.episodes_removed ?? 0;
+          status.className = "lib-status ok";
+          status.textContent = `${n} stale episode${
+            n !== 1 ? "s" : ""
+          } removed`;
+        } else if (s.status === "error") {
+          clearInterval(this.podcastSweepPollTimer);
+          btn.disabled = false;
+          status.className = "lib-status error";
+          status.textContent = `Error: ${s.error ?? "unknown"}`;
+        } else if (s.status === "idle") {
+          clearInterval(this.podcastSweepPollTimer);
+          btn.disabled = false;
+          status.className = "lib-status";
+          status.textContent = "";
+        } else {
+          const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+          status.textContent = `Sweeping… (${elapsed}s)`;
+        }
+      } catch (e) {
+        console.warn("podcast sweep poll:", e);
+      }
+    }, 1500) as unknown as number;
+  }
+
   private async _requestShutdown(): Promise<void> {
-    if (!confirm("Shut down the audiobox server?\n\nThe web UI will no longer be accessible.")) return;
+    if (
+      !confirm(
+        "Shut down the audiobox server?\n\nThe web UI will no longer be accessible.",
+      )
+    ) return;
     try {
       await this.api.shutdown();
     } catch (_e) {
@@ -2014,7 +2707,9 @@ export class AudioInfoPlayer extends _Base {
       for (const path of excluded) {
         this.folderEnabled.set(path, false);
       }
-    } catch { /* server may not have saved exclusions yet — start with all enabled */ }
+    } catch {
+      /* server may not have saved exclusions yet — start with all enabled */
+    }
   }
 
   private _deslugify(s: string): string {
@@ -2025,6 +2720,19 @@ export class AudioInfoPlayer extends _Base {
 
   private async _saveQueueAsPlaylist(): Promise<void> {
     if (this.queue.length === 0) return;
+    // Saved playlists reference audio_files rows; a podcast episode has no
+    // such row (it lives in podcast_episodes instead), so it can't be
+    // included in a playlist — filter it out rather than let the save fail.
+    const musicTracks = this.queue.filter((t) => t.SourceType !== "podcast");
+    if (musicTracks.length === 0) {
+      const title = this.qs<HTMLElement>(".queue-title");
+      const prev = title.textContent ?? "";
+      title.textContent = "Playlists can't include podcast episodes yet";
+      setTimeout(() => {
+        title.textContent = prev;
+      }, 2000);
+      return;
+    }
     const name = prompt("Playlist name:");
     if (!name || !name.trim()) return;
     const saveBtn = this.qs<HTMLButtonElement>(".save-playlist-btn");
@@ -2033,12 +2741,14 @@ export class AudioInfoPlayer extends _Base {
     const prev = title.textContent ?? "";
     title.textContent = "Saving…";
     try {
-      await this.api.savePlaylist(name.trim(), this.queue.map((t) => t.ID));
+      await this.api.savePlaylist(name.trim(), musicTracks.map((t) => t.ID));
       title.textContent = `Saved as "${name.trim()}"`;
       setTimeout(() => {
         this._updateQueuePanel();
         // Refresh playlists tab if it is currently open.
-        const activeTab = this.shadow.querySelector<HTMLButtonElement>(".tab.active");
+        const activeTab = this.shadow.querySelector<HTMLButtonElement>(
+          ".tab.active",
+        );
         if (activeTab?.dataset.tab === "playlists") this._loadTab("playlists");
       }, 1500);
     } catch (e) {
@@ -2053,7 +2763,10 @@ export class AudioInfoPlayer extends _Base {
    * tracks matched vs. were skipped, and refreshes the Playlists tab when
    * it's the active one.
    */
-  private async _importPlaylistOPML(input: HTMLInputElement, status: HTMLElement): Promise<void> {
+  private async _importPlaylistOPML(
+    input: HTMLInputElement,
+    status: HTMLElement,
+  ): Promise<void> {
     const file = input.files?.[0];
     input.value = ""; // allow re-selecting the same file later
     if (!file) return;
@@ -2062,7 +2775,10 @@ export class AudioInfoPlayer extends _Base {
     try {
       const result = await this.api.importPlaylistOPML(file);
       status.className = "lib-status ok";
-      status.textContent = `Imported "${result.name}": ${result.imported} track${result.imported !== 1 ? "s" : ""}` +
+      status.textContent =
+        `Imported "${result.name}": ${result.imported} track${
+          result.imported !== 1 ? "s" : ""
+        }` +
         (result.skipped > 0 ? `, ${result.skipped} not found` : "");
       if (this.currentBrowseTab === "playlists") this._loadTab("playlists");
     } catch (e) {
@@ -2081,17 +2797,28 @@ export class AudioInfoPlayer extends _Base {
   private async _buildPlaylistFromCriteria(status: HTMLElement): Promise<void> {
     const artist = prompt("Artist name contains (leave blank for any):");
     if (artist === null) return;
-    const yearFromStr = prompt("From year, e.g. 1965 (leave blank for no lower bound):");
+    const yearFromStr = prompt(
+      "From year, e.g. 1965 (leave blank for no lower bound):",
+    );
     if (yearFromStr === null) return;
-    const yearToStr = prompt("To year, e.g. 1975 (leave blank for no upper bound):");
+    const yearToStr = prompt(
+      "To year, e.g. 1975 (leave blank for no upper bound):",
+    );
     if (yearToStr === null) return;
-    const excludeStr = prompt("Exclude folders — comma-separated paths (leave blank for none):");
+    const excludeStr = prompt(
+      "Exclude folders — comma-separated paths (leave blank for none):",
+    );
     if (excludeStr === null) return;
 
     const trimmedArtist = artist.trim();
-    const excludeFolders = excludeStr.split(",").map((s) => s.trim()).filter(Boolean);
+    const excludeFolders = excludeStr.split(",").map((s) => s.trim()).filter(
+      Boolean,
+    );
 
-    if (!trimmedArtist && !yearFromStr.trim() && !yearToStr.trim() && excludeFolders.length === 0) {
+    if (
+      !trimmedArtist && !yearFromStr.trim() && !yearToStr.trim() &&
+      excludeFolders.length === 0
+    ) {
       status.className = "lib-status error";
       status.textContent = "No criteria given — nothing added.";
       return;
@@ -2105,7 +2832,10 @@ export class AudioInfoPlayer extends _Base {
     };
     const yearFrom = parseYear(yearFromStr);
     const yearTo = parseYear(yearToStr);
-    if ((yearFromStr.trim() && yearFrom === undefined) || (yearToStr.trim() && yearTo === undefined)) {
+    if (
+      (yearFromStr.trim() && yearFrom === undefined) ||
+      (yearToStr.trim() && yearTo === undefined)
+    ) {
       status.className = "lib-status error";
       status.textContent = "Year must be a number.";
       return;
@@ -2127,7 +2857,9 @@ export class AudioInfoPlayer extends _Base {
       }
       this._addToQueue(tracks);
       status.className = "lib-status ok";
-      status.textContent = `Added ${tracks.length} track${tracks.length !== 1 ? "s" : ""} to the queue.`;
+      status.textContent = `Added ${tracks.length} track${
+        tracks.length !== 1 ? "s" : ""
+      } to the queue.`;
     } catch (e) {
       status.className = "lib-status error";
       status.textContent = String(e);

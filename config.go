@@ -66,6 +66,10 @@ type CollectionConfig struct {
 	CORSOrigin   string `yaml:"corsOrigin,omitempty"`
 	ShareAddress    string   `yaml:"shareAddress,omitempty"`
 	ExcludedFolders []string `yaml:"excludedFolders,omitempty"`
+	// PodcastRetentionDays is how many days a listened podcast episode is
+	// kept before the sweep deletes it. 0 (unset) means the default of 14;
+	// a negative value disables the age-based sweep. See PodcastRetentionDays().
+	PodcastRetentionDays int `yaml:"podcastRetentionDays,omitempty"`
 }
 
 /** LoadConfig reads a CollectionConfig from a YAML file on disk.
@@ -325,6 +329,9 @@ func InitAudiobox() (*Collection, error) {
 			return nil, fmt.Errorf("creating directory %s: %w", filepath.Join(audioDir, sub), err)
 		}
 	}
+	if err := seedPodcastSubscriptions(audioDir); err != nil {
+		return nil, err
+	}
 
 	yamlFile := filepath.Join(audioDir, "audio.yaml")
 	dbFile := filepath.Join(audioDir, "audio.db")
@@ -500,6 +507,41 @@ func initSchema(db *sql.DB) error {
 			audio_id    TEXT NOT NULL REFERENCES audio_files(id) ON DELETE CASCADE,
 			PRIMARY KEY (playlist_id, position)
 		)`,
+		`CREATE TABLE IF NOT EXISTS podcast_feeds (
+			feed_url       TEXT PRIMARY KEY,
+			show_label     TEXT NOT NULL,
+			etag           TEXT,
+			last_modified  TEXT,
+			last_synced_at TIMESTAMP,
+			last_error     TEXT
+		)`,
+		// feed_url is nullable: a manually-ingested episode (not sourced
+		// from a subscribed feed) has no parent podcast_feeds row, and SQL
+		// NULL is exempt from foreign-key checking so that's allowed
+		// without a placeholder row.
+		`CREATE TABLE IF NOT EXISTS podcast_episodes (
+			id            TEXT PRIMARY KEY,
+			feed_url      TEXT REFERENCES podcast_feeds(feed_url) ON DELETE CASCADE,
+			show_label    TEXT NOT NULL,
+			guid          TEXT,
+			title         TEXT,
+			published     TEXT,
+			enclosure_url TEXT,
+			content_url   TEXT,
+			duration      TEXT,
+			status        TEXT NOT NULL DEFAULT 'new',
+			listened_at   TIMESTAMP,
+			keep          INTEGER NOT NULL DEFAULT 0,
+			created       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)`,
+		// Partial unique index: only enforced for feed-sourced episodes
+		// (feed_url and guid both non-null/non-empty), so a repeat sync
+		// never duplicates an episode but manually-ingested rows (which
+		// carry no feed_url) never collide with each other.
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_podcast_episodes_feed_guid
+			ON podcast_episodes(feed_url, guid)
+			WHERE feed_url IS NOT NULL AND guid IS NOT NULL AND guid != ''`,
 	}
 	for _, s := range stmts {
 		if _, err := db.Exec(s); err != nil {

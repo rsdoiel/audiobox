@@ -2,6 +2,7 @@ import { assertEquals } from "@std/assert";
 import { DOMParser } from "deno-dom";
 
 // Pure utility functions — no DOM required
+import type { PodcastEpisode } from "./audiobox_api.ts";
 import {
   buildBrowseQuery,
   buildFolderTree,
@@ -15,6 +16,7 @@ import {
   literalJumpLetter,
   parseDurationSecs,
   PLAYER_TEMPLATE,
+  podcastEpisodeToTrack,
   renderJumpBar,
   shuffleQueue,
 } from "./audiobox_player.ts";
@@ -57,7 +59,10 @@ Deno.test("formatArtists - undefined/null-like coerced to empty string", () => {
 });
 
 Deno.test("formatArtists - single artist", () => {
-  assertEquals(formatArtists([{ type: "Person", name: "Glenn Gould" }]), "Glenn Gould");
+  assertEquals(
+    formatArtists([{ type: "Person", name: "Glenn Gould" }]),
+    "Glenn Gould",
+  );
 });
 
 Deno.test("formatArtists - multiple artists joined with comma", () => {
@@ -107,11 +112,17 @@ Deno.test("formatDuration - PT1H0M0S (only hours)", () => {
 // ---------------------------------------------------------------------------
 
 Deno.test("buildBrowseQuery - albums tab", () => {
-  assertEquals(buildBrowseQuery("albums", "Goldberg Variations"), 'album:"Goldberg Variations"');
+  assertEquals(
+    buildBrowseQuery("albums", "Goldberg Variations"),
+    'album:"Goldberg Variations"',
+  );
 });
 
 Deno.test("buildBrowseQuery - artists tab", () => {
-  assertEquals(buildBrowseQuery("artists", "Glenn Gould"), 'artist:"Glenn Gould"');
+  assertEquals(
+    buildBrowseQuery("artists", "Glenn Gould"),
+    'artist:"Glenn Gould"',
+  );
 });
 
 Deno.test("buildBrowseQuery - titles tab", () => {
@@ -126,7 +137,10 @@ Deno.test("buildBrowseQuery - unknown tab returns item as-is", () => {
 });
 
 Deno.test("buildBrowseQuery - escapes double quotes in item", () => {
-  assertEquals(buildBrowseQuery("albums", 'Say "Hello"'), 'album:"Say \\"Hello\\""');
+  assertEquals(
+    buildBrowseQuery("albums", 'Say "Hello"'),
+    'album:"Say \\"Hello\\""',
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -138,7 +152,10 @@ Deno.test("buildFolderTree - flat single-level folders", () => {
     { path: "Travels", name: "Travels", trackCount: 20 },
     { path: "Peace-Love-Ukulele", name: "Peace-Love-Ukulele", trackCount: 12 },
   ]);
-  assertEquals(tree.map((n) => n.path).sort(), ["Peace-Love-Ukulele", "Travels"]);
+  assertEquals(tree.map((n) => n.path).sort(), [
+    "Peace-Love-Ukulele",
+    "Travels",
+  ]);
   const travels = tree.find((n) => n.path === "Travels")!;
   assertEquals(travels.depth, 0);
   assertEquals(travels.ownCount, 20);
@@ -150,7 +167,11 @@ Deno.test("buildFolderTree - reproduces a folder nested 3+ levels deep (bug: cou
   // Music/Albums/SomeArtist/SomeAlbum/SomeSubfolder holds tracks directly;
   // every ancestor must get its own navigable node, not just the first two levels.
   const tree = buildFolderTree([
-    { path: "Music/Albums/SomeArtist/SomeAlbum/SomeSubfolder", name: "SomeSubfolder", trackCount: 5 },
+    {
+      path: "Music/Albums/SomeArtist/SomeAlbum/SomeSubfolder",
+      name: "SomeSubfolder",
+      trackCount: 5,
+    },
   ]);
   const paths = tree.map((n) => n.path).sort();
   assertEquals(paths, [
@@ -161,7 +182,9 @@ Deno.test("buildFolderTree - reproduces a folder nested 3+ levels deep (bug: cou
     "Music/Albums/SomeArtist/SomeAlbum/SomeSubfolder",
   ]);
 
-  const leaf = tree.find((n) => n.path === "Music/Albums/SomeArtist/SomeAlbum/SomeSubfolder")!;
+  const leaf = tree.find((n) =>
+    n.path === "Music/Albums/SomeArtist/SomeAlbum/SomeSubfolder"
+  )!;
   assertEquals(leaf.depth, 4);
   assertEquals(leaf.ownCount, 5);
   assertEquals(leaf.totalCount, 5);
@@ -169,8 +192,16 @@ Deno.test("buildFolderTree - reproduces a folder nested 3+ levels deep (bug: cou
 
   const midAncestor = tree.find((n) => n.path === "Music/Albums/SomeArtist")!;
   assertEquals(midAncestor.depth, 2);
-  assertEquals(midAncestor.ownCount, 0, "an ancestor with no tracks of its own has ownCount 0");
-  assertEquals(midAncestor.totalCount, 5, "ancestors aggregate descendant track counts");
+  assertEquals(
+    midAncestor.ownCount,
+    0,
+    "an ancestor with no tracks of its own has ownCount 0",
+  );
+  assertEquals(
+    midAncestor.totalCount,
+    5,
+    "ancestors aggregate descendant track counts",
+  );
   assertEquals(midAncestor.hasChildren, true);
 
   const root = tree.find((n) => n.path === "Music")!;
@@ -231,7 +262,10 @@ Deno.test("dirOfContentURL - single-level album path", () => {
 });
 
 Deno.test("dirOfContentURL - nested album path", () => {
-  assertEquals(dirOfContentURL("Jazz/MilesDavis/Live/track.mp3"), "Jazz/MilesDavis/Live");
+  assertEquals(
+    dirOfContentURL("Jazz/MilesDavis/Live/track.mp3"),
+    "Jazz/MilesDavis/Live",
+  );
 });
 
 Deno.test("dirOfContentURL - root-level file has no directory", () => {
@@ -239,7 +273,10 @@ Deno.test("dirOfContentURL - root-level file has no directory", () => {
 });
 
 Deno.test("dirOfContentURL - normalizes Windows-style separators", () => {
-  assertEquals(dirOfContentURL("Some\\Windows\\Path\\track.mp3"), "Some/Windows/Path");
+  assertEquals(
+    dirOfContentURL("Some\\Windows\\Path\\track.mp3"),
+    "Some/Windows/Path",
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -249,8 +286,14 @@ Deno.test("dirOfContentURL - normalizes Windows-style separators", () => {
 // ---------------------------------------------------------------------------
 
 Deno.test("librarianSortKey - strips a leading standalone article", () => {
-  assertEquals(librarianSortKey("The Dave Matthews Band"), "dave matthews band");
-  assertEquals(librarianSortKey("the dave matthews band"), "dave matthews band");
+  assertEquals(
+    librarianSortKey("The Dave Matthews Band"),
+    "dave matthews band",
+  );
+  assertEquals(
+    librarianSortKey("the dave matthews band"),
+    "dave matthews band",
+  );
   assertEquals(librarianSortKey("A Perfect Circle"), "perfect circle");
   assertEquals(librarianSortKey("An Cafe"), "cafe");
 });
@@ -362,16 +405,16 @@ Deno.test("shuffleQueue - preserveCurrent=true with current track at the end of 
 // PLAYER_TEMPLATE structure (via deno-dom)
 // ---------------------------------------------------------------------------
 
-Deno.test("PLAYER_TEMPLATE - has five tab buttons", () => {
+Deno.test("PLAYER_TEMPLATE - has six tab buttons", () => {
   const doc = new DOMParser().parseFromString(
     `<html><body>${PLAYER_TEMPLATE}</body></html>`,
     "text/html",
   )!;
   const tabs = doc.querySelectorAll(".tab");
-  assertEquals(tabs.length, 5);
+  assertEquals(tabs.length, 6);
 });
 
-Deno.test("PLAYER_TEMPLATE - tab labels are Albums, Artists, Titles, Folders, Playlists", () => {
+Deno.test("PLAYER_TEMPLATE - tab labels are Albums, Artists, Titles, Folders, Playlists, Podcasts", () => {
   const doc = new DOMParser().parseFromString(
     `<html><body>${PLAYER_TEMPLATE}</body></html>`,
     "text/html",
@@ -379,7 +422,14 @@ Deno.test("PLAYER_TEMPLATE - tab labels are Albums, Artists, Titles, Folders, Pl
   const labels = Array.from(doc.querySelectorAll(".tab")).map((el) =>
     el.textContent?.trim()
   );
-  assertEquals(labels, ["Albums", "Artists", "Titles", "Folders", "Playlists"]);
+  assertEquals(labels, [
+    "Albums",
+    "Artists",
+    "Titles",
+    "Folders",
+    "Playlists",
+    "Podcasts",
+  ]);
 });
 
 Deno.test("PLAYER_TEMPLATE - has search input and button", () => {
@@ -399,7 +449,8 @@ Deno.test("PLAYER_TEMPLATE - search input documents field-prefix syntax", () => 
     "text/html",
   )!;
   const input = doc.querySelector(".search-bar input")!;
-  const hint = (input.getAttribute("title") ?? "") + (input.getAttribute("placeholder") ?? "");
+  const hint = (input.getAttribute("title") ?? "") +
+    (input.getAttribute("placeholder") ?? "");
   // The hint must mention at least the album:/artist:/title: prefixes so a
   // user isn't left guessing (TODO.md: "do I need a query prefix like
   // artist:Shimabukuro?").
@@ -487,4 +538,58 @@ Deno.test("PLAYER_TEMPLATE - has a Build Playlist control", () => {
   const status = doc.querySelector(".build-playlist-status");
   assertEquals(btn !== null, true);
   assertEquals(status !== null, true);
+});
+
+Deno.test("PLAYER_TEMPLATE - has Sync Podcasts and Sweep Podcasts controls", () => {
+  const doc = new DOMParser().parseFromString(
+    `<html><body>${PLAYER_TEMPLATE}</body></html>`,
+    "text/html",
+  )!;
+  assertEquals(doc.querySelector(".podcast-sync-btn") !== null, true);
+  assertEquals(doc.querySelector(".podcast-sync-status") !== null, true);
+  assertEquals(doc.querySelector(".podcast-sweep-btn") !== null, true);
+  assertEquals(doc.querySelector(".podcast-sweep-status") !== null, true);
+});
+
+// ---------------------------------------------------------------------------
+// podcastEpisodeToTrack
+// ---------------------------------------------------------------------------
+
+function sampleEpisode(
+  overrides: Partial<PodcastEpisode> = {},
+): PodcastEpisode {
+  return {
+    ID: "ep-1",
+    FeedURL: "https://feeds.example.com/show",
+    ShowLabel: "Marketplace",
+    GUID: "guid-1",
+    Title: "Episode One",
+    Published: "2026-09-01T12:00:00Z",
+    EnclosureURL: "https://example.com/ep1.mp3",
+    ContentURL: "Podcasts/Marketplace/episode-one.mp3",
+    Duration: "PT30M",
+    Status: "downloaded",
+    ListenedAt: "",
+    Keep: false,
+    Created: "2026-09-01T12:00:00Z",
+    Updated: "2026-09-01T12:00:00Z",
+    ...overrides,
+  };
+}
+
+Deno.test("podcastEpisodeToTrack - maps episode fields onto the AudioInfo shape", () => {
+  const track = podcastEpisodeToTrack(sampleEpisode());
+  assertEquals(track.ID, "ep-1");
+  assertEquals(track.Name, "Episode One");
+  assertEquals(track.InAlbum, "Marketplace");
+  assertEquals(track.ContentURL, "Podcasts/Marketplace/episode-one.mp3");
+  assertEquals(track.Duration, "PT30M");
+  assertEquals(track.DatePublished, "2026-09-01T12:00:00Z");
+  assertEquals(track.SourceType, "podcast");
+});
+
+Deno.test("podcastEpisodeToTrack - result plays through parseDurationSecs/formatDuration like a music track", () => {
+  const track = podcastEpisodeToTrack(sampleEpisode({ Duration: "PT1H2M3S" }));
+  assertEquals(parseDurationSecs(track.Duration), 3723);
+  assertEquals(formatDuration(track.Duration), "1:02:03");
 });

@@ -2,8 +2,10 @@ package audiobox
 
 import (
 	"context"
+	"database/sql"
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -27,7 +29,8 @@ type asyncState struct {
 	running     bool
 	startedAt   time.Time
 	completedAt time.Time
-	count       int // records affected (sweep only)
+	count       int            // records affected (sweep only)
+	data        map[string]any // extra fields merged into a completed status response (podcast sync only)
 	err         error
 }
 
@@ -115,6 +118,8 @@ func (c *Collection) Serve(logger *log.Logger) error {
 
 	scanSt := &asyncState{}
 	sweepSt := &asyncState{}
+	podcastSyncSt := &asyncState{}
+	podcastSweepSt := &asyncState{}
 	shutdownCh := make(chan struct{})
 
 	ss := &shareState{}
@@ -148,6 +153,21 @@ func (c *Collection) Serve(logger *log.Logger) error {
 	mux.HandleFunc("GET /api/scan/status", c.handleAsyncStatus(scanSt))
 	mux.HandleFunc("POST /api/sweep", c.handleSweep(sweepSt, logger))
 	mux.HandleFunc("GET /api/sweep/status", c.handleSweepStatus(sweepSt))
+	mux.HandleFunc("POST /api/podcasts/sync", c.handlePodcastSync(podcastSyncSt, http.DefaultClient, logger))
+	mux.HandleFunc("GET /api/podcasts/sync/status", c.handleAsyncStatus(podcastSyncSt))
+	mux.HandleFunc("GET /api/podcasts/subscriptions", c.handlePodcastSubscriptions(logger))
+	mux.HandleFunc("POST /api/podcasts/subscriptions", c.handlePodcastAddSubscription(logger))
+	mux.HandleFunc("GET /api/podcasts/shows", c.handlePodcastShows(logger))
+	mux.HandleFunc("GET /api/podcasts/shows/{label}/episodes", c.handlePodcastShowEpisodes(logger))
+	mux.HandleFunc("POST /api/podcasts/episodes/{id}/download", c.handlePodcastEpisodeDownload(http.DefaultClient, logger))
+	mux.HandleFunc("GET /api/podcasts/episodes/{id}/audio", c.handlePodcastEpisodeAudio(logger))
+	mux.HandleFunc("POST /api/podcasts/episodes/{id}/listened", c.handlePodcastEpisodeListened(logger))
+	mux.HandleFunc("POST /api/podcasts/episodes/{id}/unlistened", c.handlePodcastEpisodeUnlistened(logger))
+	mux.HandleFunc("POST /api/podcasts/episodes/{id}/keep", c.handlePodcastEpisodeKeep(logger))
+	mux.HandleFunc("DELETE /api/podcasts/episodes/{id}", c.handlePodcastEpisodeDelete(logger))
+	mux.HandleFunc("POST /api/podcasts/episodes/{id}/migrate", c.handlePodcastEpisodeMigrate(logger))
+	mux.HandleFunc("POST /api/podcasts/sweep", c.handlePodcastSweep(podcastSweepSt, logger))
+	mux.HandleFunc("GET /api/podcasts/sweep/status", c.handleAsyncStatus(podcastSweepSt))
 	mux.HandleFunc("GET /api/audio/{id}", c.handleAudio(logger))
 	mux.HandleFunc("GET /api/help", handleAPIHelp())
 	mux.HandleFunc("POST /api/shutdown", handleShutdown(shutdownCh, logger))
@@ -827,8 +847,322 @@ func buildAsyncStatusResponse(state *asyncState) map[string]any {
 		resp["status"] = "completed"
 		resp["started_at"] = state.startedAt
 		resp["completed_at"] = state.completedAt
+		for k, v := range state.data {
+			resp[k] = v
+		}
 	}
 	return resp
+}
+
+func (c *Collection) handlePodcastSync(state *asyncState, client *http.Client, logger *log.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		state.mu.Lock()
+		if state.running {
+			state.mu.Unlock()
+			writeJSONError(w, http.StatusConflict, "podcast sync already in progress")
+			return
+		}
+		state.running = true
+		state.startedAt = time.Now()
+		state.completedAt = time.Time{}
+		state.count = 0
+		state.data = nil
+		state.err = nil
+		started := state.startedAt
+		state.mu.Unlock()
+
+		go func() {
+			result, err := c.SyncPodcastsWithClient(client)
+			state.mu.Lock()
+			state.running = false
+			state.completedAt = time.Now()
+			state.err = err
+			if err == nil {
+				state.count = result.NewEpisodes
+				data := map[string]any{
+					"feeds_checked": result.FeedsChecked,
+					"new_episodes":  result.NewEpisodes,
+				}
+				if len(result.Errors) > 0 {
+					data["feed_errors"] = result.Errors
+				}
+				state.data = data
+			}
+			state.mu.Unlock()
+			if err != nil {
+				logger.Printf("podcast sync error: %v", err)
+			} else {
+				logger.Printf("podcast sync completed: %d new episode(s) across %d feed(s)", result.NewEpisodes, result.FeedsChecked)
+			}
+		}()
+
+		w.WriteHeader(http.StatusAccepted)
+		writeJSON(w, map[string]any{
+			"status":     "started",
+			"started_at": started,
+		})
+	}
+}
+
+func (c *Collection) handlePodcastSubscriptions(logger *log.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		subs, err := c.LoadSubscriptions()
+		if err != nil {
+			logger.Printf("load podcast subscriptions: %v", err)
+			writeJSONError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, subs)
+	}
+}
+
+func (c *Collection) handlePodcastAddSubscription(logger *log.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Label   string `json:"label"`
+			FeedURL string `json:"feedURL"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+		if err := c.AppendSubscription(body.Label, body.FeedURL); err != nil {
+			logger.Printf("add podcast subscription: %v", err)
+			code := http.StatusInternalServerError
+			if errors.Is(err, errInvalidSubscription) {
+				code = http.StatusBadRequest
+			}
+			writeJSONError(w, code, err.Error())
+			return
+		}
+		subs, err := c.LoadSubscriptions()
+		if err != nil {
+			logger.Printf("load podcast subscriptions after add: %v", err)
+			writeJSONError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, subs)
+	}
+}
+
+func (c *Collection) handlePodcastShows(logger *log.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		shows, err := c.ListPodcastShows()
+		if err != nil {
+			logger.Printf("list podcast shows: %v", err)
+			writeJSONError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, shows)
+	}
+}
+
+func (c *Collection) handlePodcastShowEpisodes(logger *log.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		label := r.PathValue("label")
+		episodes, err := c.ListPodcastEpisodesByShow(label)
+		if err != nil {
+			logger.Printf("list episodes for show %q: %v", label, err)
+			writeJSONError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, episodes)
+	}
+}
+
+func (c *Collection) handlePodcastEpisodeDownload(client *http.Client, logger *log.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		ep, err := c.DownloadPodcastEpisodeWithClient(client, id)
+		if err != nil {
+			logger.Printf("download podcast episode %s: %v", id, err)
+			code := http.StatusInternalServerError
+			if errors.Is(err, sql.ErrNoRows) {
+				code = http.StatusNotFound
+			}
+			writeJSONError(w, code, err.Error())
+			return
+		}
+		writeJSON(w, ep)
+	}
+}
+
+func (c *Collection) handlePodcastEpisodeAudio(logger *log.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		ep, err := c.getPodcastEpisode(id)
+		if err != nil {
+			writeJSONError(w, http.StatusNotFound, "record not found")
+			return
+		}
+		if ep.ContentURL == "" {
+			writeJSONError(w, http.StatusNotFound, "episode has not been downloaded")
+			return
+		}
+
+		absPath := filepath.Join(filepath.Clean(c.cfg.AudioDir), ep.ContentURL)
+		audioDir := filepath.Clean(c.cfg.AudioDir) + string(filepath.Separator)
+		if !strings.HasPrefix(absPath+string(filepath.Separator), audioDir) {
+			logger.Printf("podcast audio: path %q outside AudioDir", absPath)
+			writeJSONError(w, http.StatusForbidden, "forbidden")
+			return
+		}
+
+		f, err := os.Open(absPath)
+		if err != nil {
+			writeJSONError(w, http.StatusNotFound, "file not found")
+			return
+		}
+		defer f.Close()
+
+		fi, err := f.Stat()
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "stat failed")
+			return
+		}
+		http.ServeContent(w, r, filepath.Base(absPath), fi.ModTime(), f)
+	}
+}
+
+func (c *Collection) handlePodcastEpisodeListened(logger *log.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		ep, err := c.MarkPodcastEpisodeListened(id)
+		if err != nil {
+			logger.Printf("mark podcast episode %s listened: %v", id, err)
+			code := http.StatusInternalServerError
+			if errors.Is(err, sql.ErrNoRows) {
+				code = http.StatusNotFound
+			}
+			writeJSONError(w, code, err.Error())
+			return
+		}
+		writeJSON(w, ep)
+	}
+}
+
+func (c *Collection) handlePodcastEpisodeUnlistened(logger *log.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		ep, err := c.MarkPodcastEpisodeUnlistened(id)
+		if err != nil {
+			logger.Printf("mark podcast episode %s unlistened: %v", id, err)
+			code := http.StatusInternalServerError
+			if errors.Is(err, sql.ErrNoRows) {
+				code = http.StatusNotFound
+			}
+			writeJSONError(w, code, err.Error())
+			return
+		}
+		writeJSON(w, ep)
+	}
+}
+
+func (c *Collection) handlePodcastEpisodeKeep(logger *log.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		var body struct {
+			Keep bool `json:"keep"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+		ep, err := c.SetPodcastEpisodeKeep(id, body.Keep)
+		if err != nil {
+			logger.Printf("set keep on podcast episode %s: %v", id, err)
+			code := http.StatusInternalServerError
+			if errors.Is(err, sql.ErrNoRows) {
+				code = http.StatusNotFound
+			}
+			writeJSONError(w, code, err.Error())
+			return
+		}
+		writeJSON(w, ep)
+	}
+}
+
+func (c *Collection) handlePodcastEpisodeDelete(logger *log.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		if err := c.DeletePodcastEpisode(id); err != nil {
+			logger.Printf("delete podcast episode %s: %v", id, err)
+			code := http.StatusInternalServerError
+			if errors.Is(err, sql.ErrNoRows) {
+				code = http.StatusNotFound
+			}
+			writeJSONError(w, code, err.Error())
+			return
+		}
+		writeJSON(w, map[string]string{"status": "deleted", "id": id})
+	}
+}
+
+func (c *Collection) handlePodcastEpisodeMigrate(logger *log.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		var body struct {
+			Destination string `json:"destination"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+		audioID, err := c.MigratePodcastEpisodeToLibrary(id, body.Destination)
+		if err != nil {
+			logger.Printf("migrate podcast episode %s: %v", id, err)
+			code := http.StatusInternalServerError
+			if errors.Is(err, sql.ErrNoRows) {
+				code = http.StatusNotFound
+			}
+			writeJSONError(w, code, err.Error())
+			return
+		}
+		writeJSON(w, map[string]string{"status": "migrated", "audio_id": audioID})
+	}
+}
+
+func (c *Collection) handlePodcastSweep(state *asyncState, logger *log.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		state.mu.Lock()
+		if state.running {
+			state.mu.Unlock()
+			writeJSONError(w, http.StatusConflict, "podcast sweep already in progress")
+			return
+		}
+		state.running = true
+		state.startedAt = time.Now()
+		state.completedAt = time.Time{}
+		state.count = 0
+		state.data = nil
+		state.err = nil
+		started := state.startedAt
+		state.mu.Unlock()
+
+		go func() {
+			n, err := c.SweepPodcastEpisodes()
+			state.mu.Lock()
+			state.running = false
+			state.completedAt = time.Now()
+			state.err = err
+			if err == nil {
+				state.count = n
+				state.data = map[string]any{"episodes_removed": n}
+			}
+			state.mu.Unlock()
+			if err != nil {
+				logger.Printf("podcast sweep error: %v", err)
+			} else {
+				logger.Printf("podcast sweep completed: %d stale episode(s) removed", n)
+			}
+		}()
+
+		w.WriteHeader(http.StatusAccepted)
+		writeJSON(w, map[string]any{
+			"status":     "started",
+			"started_at": started,
+		})
+	}
 }
 
 func handleShutdown(shutdownCh chan struct{}, logger *log.Logger) http.HandlerFunc {
@@ -966,6 +1300,44 @@ GET  /api/sweep/status   — poll sweep progress
 ` + "```" + `
 
 Completed sweep status includes ` + "`records_removed`" + ` count.
+
+## Podcasts
+
+` + "```" + `
+GET  /api/podcasts/subscriptions                — subscriptions parsed from Podcasts/subscriptions.md
+POST /api/podcasts/subscriptions                — body {"label": "...", "feedURL": "..."}; appends one line
+POST /api/podcasts/sync                        — start async check of every feed in Podcasts/subscriptions.md
+GET  /api/podcasts/sync/status                  — poll sync progress
+GET  /api/podcasts/shows                        — subscribed shows with episode counts and last sync outcome
+GET  /api/podcasts/shows/{label}/episodes       — episodes for one show
+GET  /api/podcasts/episodes/{id}/audio          — stream a downloaded episode's audio (supports Range)
+POST /api/podcasts/episodes/{id}/download       — fetch an episode's audio and mark it downloaded
+POST /api/podcasts/episodes/{id}/listened       — mark an episode listened (records listened_at)
+POST /api/podcasts/episodes/{id}/unlistened     — revert to downloaded (or new), clears listened_at
+POST /api/podcasts/episodes/{id}/keep           — body {"keep": true|false}; exempts from the sweep
+DELETE /api/podcasts/episodes/{id}              — remove an episode's row and downloaded file
+POST /api/podcasts/episodes/{id}/migrate        — body {"destination": "relative/path"}; move into the library
+POST /api/podcasts/sweep                        — start async removal of stale listened episodes
+GET  /api/podcasts/sweep/status                 — poll sweep progress
+` + "```" + `
+
+Sync only discovers new episodes (status ` + "`new`" + `); it does not download audio.
+Completed sync status includes ` + "`feeds_checked`" + `, ` + "`new_episodes`" + `, and (when any feed
+failed) ` + "`feed_errors`" + ` — a map of feed URL to error message. Download is idempotent:
+calling it again on an already-downloaded episode is a no-op that returns the
+existing result, and it rejects a response whose Content-Type does not start
+with ` + "`audio/`" + `.
+
+The sweep removes an episode (file and row) only when its status is
+` + "`listened`" + `, its ` + "`keep`" + ` flag is false, and it was listened to longer ago
+than the collection's ` + "`podcastRetentionDays`" + ` (audio.yaml; default 14, a
+negative value disables the sweep entirely). Completed sweep status includes
+` + "`episodes_removed`" + `.
+
+Migrate moves the episode's file into ` + "`destination`" + ` (relative to AudioDir,
+created if missing) and creates a normal audio_files record for it — the
+episode is now an ordinary library track and is no longer subject to the
+podcast sweep. Response: ` + "`{\"status\":\"migrated\",\"audio_id\":\"...\"}`" + `.
 
 ## Audio playback
 
