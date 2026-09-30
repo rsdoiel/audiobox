@@ -3,6 +3,8 @@
 
 ## Bugs
 
+- [ ] In the list that displays Artists when I click on "T" I get list positioned at entries starting with "A". "U" shows listing starting with "V". The "S" and "R" jump points work fine.
+
 ## Next
 
 - [ ] Drop terminal based player, only support playback from web browser
