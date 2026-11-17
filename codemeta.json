@@ -18,11 +18,11 @@
   "name": "audiobox",
   "license": "https://www.gnu.org/licenses/agpl-3.0.txt",
   "programmingLanguage": [
-    "Go >= 1.26.2",
+    "Go >= 1.27.3",
     "TypeScript"
   ],
   "softwareRequirements": [
-    "Go >= 1.26.2"
+    "Go >= 1.27.3"
   ],
   "softwareSuggestions": [
     "CMTools >= 0.0.45b",

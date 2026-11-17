@@ -32,7 +32,7 @@ Installing from source
 
 ### Required software
 
-- Go &gt;&#x3D; 1.26.2
+- Go >= 1.27.3
 
 ### Steps
 

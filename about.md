@@ -16,7 +16,7 @@ version: 0.0.5
 license_url: https://www.gnu.org/licenses/agpl-3.0.txt
 
 programming_language:
-  - Go >= 1.26.2
+  - Go >= 1.27.3
   - TypeScript
 
 
@@ -59,7 +59,7 @@ This software is for Lourdes.
 
 ## Programming languages
 
-- Go >= 1.26.2
+- Go >= 1.27.3
 - TypeScript
 
 
@@ -67,7 +67,7 @@ This software is for Lourdes.
 
 ## Software Requirements
 
-- Go >= 1.26.2
+- Go >= 1.27.3
 
 
 ## Software Suggestions
