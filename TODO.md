@@ -32,4 +32,4 @@ To match the workspace standard (knowledge and opml are the models; Go 1.27.3 ac
 - [x] publish.bash/publish.ps1: take knowledge's checked versions (a failed pull no longer publishes nothing silently).
 - [x] release.bash: matches fountain's except the macOS .dmg upload, which stays.
 - [x] release.ps1: knowledge's, with the macOS .dmg upload kept.
-- [ ] website.mak, page.tmpl, add-col-scope.lua, website.ps1: take knowledge's (check `NO_PUBLISH` and nav links).
+- [x] website.mak, page.tmpl, add-col-scope.lua, website.ps1: take knowledge's (check `NO_PUBLISH` and nav links).
